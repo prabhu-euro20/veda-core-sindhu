@@ -1046,6 +1046,13 @@
          // ─────────────────────────────────────────────────────────
          $op_is_custom2 = ($opcode == 7'b1011011);
          $is_veda_oca   = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001010);
+         // RTL mirror of DESIGN_01/Sail CAndPerm: rights attenuation. funct7
+         // 0010111, the next free Custom-2/funct3=001 slot (OCA 0001010 ..
+         // OCRETURN 0010110). cd = cs1 with Perms &= rs2, otherwise the OCA
+         // manipulate idiom exactly: all fields carry from cs1, Tag cleared
+         // on an untagged or sealed source. Monotonic by construction (AND
+         // only clears), so no bounds term.
+         $is_veda_candperm = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010111);
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE RTL MILESTONE 3 DECODE — the Veda-Cap query family
@@ -1457,6 +1464,8 @@
                             (|cpu>>1$veda_rd_cap == #vreg);
             $oca_wr_en  = |cpu>>1$is_veda_oca &&
                           (|cpu>>1$veda_rd_cap == #vreg);
+            $candperm_wr_en = |cpu>>1$is_veda_candperm &&
+                              (|cpu>>1$veda_rd_cap == #vreg);
             // Milestone 3 addition: CSetBounds/CSetBoundsExact, a third
             // independent write source, same shared $veda_rd_cap
             // position. Applies the fix already learned from OCA's own
@@ -1538,6 +1547,7 @@
                    // matching Sail's own three-way match exactly.
                    $rebind_wr_en     ? |cpu>>1$veda_rebind_ok :
                    $oca_wr_en        ? |cpu>>1$veda_oca_ok :
+                   $candperm_wr_en   ? |cpu>>1$veda_candperm_ok :
                    $csetbounds_wr_en ? |cpu>>1$veda_csetbounds_ok :
                    $cseal_wr_en      ? |cpu>>1$veda_cseal_ok :
                    $cunseal_wr_en    ? |cpu>>1$veda_cunseal_ok :
@@ -1579,6 +1589,7 @@
                           $bind_wr_en       ? |cpu>>1$veda_odt_base :
                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_base :
                           $oca_wr_en        ? |cpu>>1$veda_rs1cap_base :
+                          $candperm_wr_en   ? |cpu>>1$veda_rs1cap_base :
                           $csetbounds_wr_en ? |cpu>>1$veda_csetbounds_new_base :
                           ($cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_base :
                           $oclc_wr_en       ? |cpu>>1$veda_oclc_unpacked_base :
@@ -1590,6 +1601,7 @@
                             $bind_wr_en       ? |cpu>>1$veda_odt_length :
                             ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_length :
                             $oca_wr_en        ? |cpu>>1$veda_rs1cap_length :
+                            $candperm_wr_en   ? |cpu>>1$veda_rs1cap_length :
                             $csetbounds_wr_en ? |cpu>>1$veda_csetbounds_new_length :
                             ($cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_length :
                             $oclc_wr_en       ? |cpu>>1$veda_oclc_unpacked_length :
@@ -1623,6 +1635,7 @@
                             $bind_wr_en       ? 16'b0 :
                             $oca_wr_en        ? |cpu>>1$veda_oca_sum[15:0] :
                             $csetbounds_wr_en ? 16'b0 :
+                            $candperm_wr_en   ? |cpu>>1$veda_rs1cap_offset :
                             ($cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_offset :
                             $oclc_wr_en       ? |cpu>>1$veda_oclc_unpacked_offset :
                             $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_offset :
@@ -1632,6 +1645,7 @@
             $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
                            $bind_wr_en ? |cpu>>1$veda_odt_perms :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_perms :
+                           $candperm_wr_en ? (|cpu>>1$veda_rs1cap_perms & |cpu>>1$rs2_data[15:0]) :
                            ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_perms :
                            $oclc_wr_en ? |cpu>>1$veda_oclc_unpacked_perms :
                            $ocinvoke_wr_en ? |cpu>>1$veda_cs2_perms :
@@ -1664,6 +1678,7 @@
             $otype[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'hFFFF :
                            $bind_wr_en ? 16'hFFFF :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? 16'hFFFF :
+                           $candperm_wr_en ? |cpu>>1$veda_rs1cap_otype :
                            ($oca_wr_en || $csetbounds_wr_en) ? |cpu>>1$veda_rs1cap_otype :
                            $cseal_wr_en   ? |cpu>>1$veda_cs2_offset :
                            $cunseal_wr_en ? 16'hFFFF :
@@ -1887,6 +1902,9 @@
          $veda_oca_sum[63:0] = {48'b0, $veda_rs1cap_offset} + $rs2_data;
          $veda_oca_out_of_range = $veda_oca_sum[63] || ($veda_oca_sum >= {48'b0, $veda_rs1cap_length});
          $veda_oca_ok = $veda_rs1cap_tag && !$veda_oca_out_of_range && ($veda_rs1cap_otype == 16'hFFFF);
+         // CAndPerm: no bounds term (masking Perms cannot leave the window);
+         // Tag survives only a tagged, unsealed source.
+         $veda_candperm_ok = $veda_rs1cap_tag && ($veda_rs1cap_otype == 16'hFFFF);
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE: Veda-Cap query family. Pure combinational reads of
