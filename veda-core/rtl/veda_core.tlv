@@ -1185,6 +1185,13 @@
          //  the real 23-bit Object_ID field -- a real, stated scope
          //  boundary, not silent truncation.
          // ─────────────────────────────────────────────────────────
+         // INTERIM BRIDGE R3: the capability's Object_ID is 44 bits now, but the
+         // ODT entry (and its id_hi anti-alias tag) is still the pre-respec
+         // 23-bit layout, so Bind still names a slot with 23 bits. R3 widens the
+         // ODT entry and this becomes [43:0]. Written as an explicit narrow slice
+         // with this marker precisely because in Verilog a deliberate narrowing and
+         // a forgotten widening look identical -- grep INTERIM BRIDGE must reach
+         // zero when R3 lands.
          $veda_object_id[22:0] = $rs1_data[22:0];
          // MILESTONE 24 Stage 2: judged on the FULL 23-bit Object_ID
          // above, NOT the truncated low-8-bit $veda_odt_idx below -- a
@@ -1219,6 +1226,7 @@
          // fix with no other change needed) instead of silently
          // returning a different object's metadata.
          $veda_odt_id_hi[14:0] = {odt_mem[$veda_odt_addr+12][6:0], odt_mem[$veda_odt_addr+11]};
+         // INTERIM BRIDGE R3: 15-bit id_hi anti-alias tag, pre-respec ODT layout.
          $veda_odt_id_match    = ($veda_odt_id_hi == $veda_object_id[22:8]);
          $veda_odt_valid        = odt_mem[$veda_odt_addr+9][0] && $veda_odt_id_match;
          // Milestone 12: the owner-hart byte, read alongside every other
@@ -1566,7 +1574,7 @@
                    $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_tag : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_tag : |cpu>>1$veda_oda_tag) :
                    $csealentry_wr_en ? |cpu>>1$veda_csealentry_ok :
                                        $RETAIN;
-            $object_id[22:0] = (|cpu$reset || |cpu>>1$reset) ? 23'b0 :
+            $object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :
                                $bind_wr_en       ? |cpu>>1$veda_object_id :
                                // Rebind success only -- on failure (sealed
                                // rd / ODT miss), Sail's own execute clause
@@ -1585,7 +1593,7 @@
                                $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_object_id : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_object_id : |cpu>>1$veda_oda_object_id) :
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
                                                                     $RETAIN;
-            $base[31:0] = (|cpu$reset || |cpu>>1$reset) ? 32'b0 :
+            $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? 56'b0 :
                           $bind_wr_en       ? |cpu>>1$veda_odt_base :
                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_base :
                           $oca_wr_en        ? |cpu>>1$veda_rs1cap_base :
@@ -1597,7 +1605,7 @@
                           $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_base : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_base : |cpu>>1$veda_oda_base) :
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
                                               $RETAIN;
-            $length[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+            $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                             $bind_wr_en       ? |cpu>>1$veda_odt_length :
                             ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_length :
                             $oca_wr_en        ? |cpu>>1$veda_rs1cap_length :
@@ -1631,10 +1639,10 @@
             // own real unsealCap() only ever clears otype, every other
             // field (including the cursor) carries over exactly as it
             // was in the sealed capability.
-            $offset[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
-                            $bind_wr_en       ? 16'b0 :
-                            $oca_wr_en        ? |cpu>>1$veda_oca_sum[15:0] :
-                            $csetbounds_wr_en ? 16'b0 :
+            $offset[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
+                            $bind_wr_en       ? 40'b0 :
+                            $oca_wr_en        ? |cpu>>1$veda_oca_sum[39:0] :
+                            $csetbounds_wr_en ? 40'b0 :
                             $candperm_wr_en   ? |cpu>>1$veda_rs1cap_offset :
                             ($cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_offset :
                             $oclc_wr_en       ? |cpu>>1$veda_oclc_unpacked_offset :
@@ -1703,7 +1711,7 @@
             // matching the Sail model's own veda_cap_unpack exactly
             // (Reserved is packed/unpacked like every other field, not
             // special-cased).
-            $reserved[7:0] = (|cpu$reset || |cpu>>1$reset) ? 8'b0 :
+            $reserved[23:0] = (|cpu$reset || |cpu>>1$reset) ? 24'b0 :
                              $bind_wr_en ? |cpu>>1$veda_odt_gen :
                              // Reserved = e.generation on Rebind success --
                              // the entire point of a Rebind refresh: the
@@ -1721,6 +1729,19 @@
                              $csealentry_wr_en ? |cpu>>1$veda_rs1cap_reserved :
                                                                   $RETAIN;
 
+            // R2b: flags[19:0] -- the new opaque/reserved field of the
+            // 256-bit format. Every producer mints zeros (nothing can set it
+            // nonzero yet); OCL.C restores whatever was stored so the
+            // memory round-trip matches Sail's struct pack/unpack exactly
+            // rather than silently diverging the day flags gains meaning.
+            $flags[19:0] = (|cpu$reset || |cpu>>1$reset) ? 20'b0 :
+                           $oclc_wr_en ? |cpu>>1$veda_oclc_unpacked_flags :
+                           ($bind_wr_en || ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ||
+                            $oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en ||
+                            $candperm_wr_en || $ocinvoke_wr_en || $ospecialrw_wr_en ||
+                            $csealentry_wr_en) ? 20'b0 :
+                                                                  $RETAIN;
+
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE: OCL.D/OCS.D checks. Real hard-trap enforcement
          //  (VEDA_CORE_SPEC.md Section 3's mcause=0x18 convention) has no
@@ -1732,18 +1753,18 @@
          //  (an illegal access cannot corrupt state) is testable now.
          // ─────────────────────────────────────────────────────────
          $veda_rs1cap_tag           = /vreg[$veda_ocl_ocs_rs1_cap]$tag;
-         $veda_rs1cap_base[31:0]    = /vreg[$veda_ocl_ocs_rs1_cap]$base;
-         $veda_rs1cap_length[15:0]  = /vreg[$veda_ocl_ocs_rs1_cap]$length;
+         $veda_rs1cap_base[55:0]    = /vreg[$veda_ocl_ocs_rs1_cap]$base;
+         $veda_rs1cap_length[39:0]  = /vreg[$veda_ocl_ocs_rs1_cap]$length;
          $veda_rs1cap_perms[15:0]   = /vreg[$veda_ocl_ocs_rs1_cap]$perms;
          $veda_rs1cap_otype[15:0]   = /vreg[$veda_ocl_ocs_rs1_cap]$otype;
-         $veda_rs1cap_object_id[22:0] = /vreg[$veda_ocl_ocs_rs1_cap]$object_id;
-         $veda_rs1cap_reserved[7:0] = /vreg[$veda_ocl_ocs_rs1_cap]$reserved;
+         $veda_rs1cap_object_id[43:0] = /vreg[$veda_ocl_ocs_rs1_cap]$object_id;
+         $veda_rs1cap_reserved[23:0] = /vreg[$veda_ocl_ocs_rs1_cap]$reserved;
          // Milestone 2 addition: Offset wasn't read anywhere in Milestone
          // 1 (OCL/OCS use a fresh per-access GPR offset, not the
          // capability's own persistent one), so it never got promoted to
          // a top-level signal at all -- OCA/NMC_ADD/Veda-Atomic all need
          // it, so it's added here.
-         $veda_rs1cap_offset[15:0] = /vreg[$veda_ocl_ocs_rs1_cap]$offset;
+         $veda_rs1cap_offset[39:0] = /vreg[$veda_ocl_ocs_rs1_cap]$offset;
 
          // Generation re-check: a fresh, independent ODT lookup by the
          // *capability's own cached* Object_ID (distinct from Bind's own
@@ -1766,6 +1787,8 @@
          // alias) took over slot 100, since generation/valid alone
          // can't tell the two apart.
          $veda_check_odt_id_hi[14:0] = {odt_mem[$veda_check_odt_addr+12][6:0], odt_mem[$veda_check_odt_addr+11]};
+         // INTERIM BRIDGE R3: dereference-time id_hi check, same pre-respec layout.
+         // $veda_rs1cap_object_id is 44 bits now; only its low 23 reach the ODT.
          $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[22:8]);
          $veda_check_odt_valid      = odt_mem[$veda_check_odt_addr+9][0] && $veda_check_odt_id_match;
          $veda_gen_stale = (!$veda_check_odt_valid) || ($veda_check_odt_gen != $veda_rs1cap_reserved);
@@ -1773,7 +1796,7 @@
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
          $veda_perm_load_ok  = $veda_rs1cap_perms[2];
          $veda_perm_store_ok = $veda_rs1cap_perms[3];
-         $veda_bounds_ok     = (($rs2_data + 64'd8) <= {48'b0, $veda_rs1cap_length});
+         $veda_bounds_ok     = (($rs2_data + 64'd8) <= {24'b0, $veda_rs1cap_length});
 
          $veda_ocl_violation = $is_veda_ocl && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_bounds_ok);
          $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_bounds_ok);
@@ -1784,7 +1807,7 @@
          // TL-Verilog's combinational elaboration doesn't strictly
          // require it).
 
-         $veda_real_addr[63:0] = {32'b0, $veda_rs1cap_base} + $rs2_data;
+         $veda_real_addr[63:0] = {8'b0, $veda_rs1cap_base} + $rs2_data;
          // The GPR holding OCS's store value ($rd is the shared 5-bit
          // GPR-index field at instr[11:7], reused here as the "value
          // source" the same way the base ISA's own store instructions
@@ -1809,7 +1832,7 @@
          //  where the access lands, only how many bytes/whether the tag
          //  store is touched.
          // ─────────────────────────────────────────────────────────
-         $veda_oclc_bounds_ok = (($rs2_data + 64'd16) <= {48'b0, $veda_rs1cap_length});
+         $veda_oclc_bounds_ok = (($rs2_data + 64'd16) <= {24'b0, $veda_rs1cap_length});
          // R2a: 32-byte natural alignment is architectural for capability
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.
@@ -1878,18 +1901,28 @@
          // otype @ Reserved @ 1'b0 padding), so both real, independent
          // implementations of this ISA agree on one real memory layout,
          // not two silently different ones.
-         $veda_ocsc_store_cap_object_id[22:0] = /vreg[$veda_rd_cap]$object_id;
-         $veda_ocsc_store_cap_base[31:0]      = /vreg[$veda_rd_cap]$base;
-         $veda_ocsc_store_cap_length[15:0]    = /vreg[$veda_rd_cap]$length;
-         $veda_ocsc_store_cap_offset[15:0]    = /vreg[$veda_rd_cap]$offset;
+         $veda_ocsc_store_cap_object_id[43:0] = /vreg[$veda_rd_cap]$object_id;
+         $veda_ocsc_store_cap_base[55:0]      = /vreg[$veda_rd_cap]$base;
+         $veda_ocsc_store_cap_length[39:0]    = /vreg[$veda_rd_cap]$length;
+         $veda_ocsc_store_cap_offset[39:0]    = /vreg[$veda_rd_cap]$offset;
          $veda_ocsc_store_cap_perms[15:0]     = /vreg[$veda_rd_cap]$perms;
          $veda_ocsc_store_cap_otype[15:0]     = /vreg[$veda_rd_cap]$otype;
-         $veda_ocsc_store_cap_reserved[7:0]   = /vreg[$veda_rd_cap]$reserved;
+         $veda_ocsc_store_cap_reserved[23:0]  = /vreg[$veda_rd_cap]$reserved;
+         // R2b: flags is opaque/reserved -- minted zero by every producer,
+         // carried through memory so the pack/unpack round-trip matches Sail
+         // exactly rather than diverging the instant flags gains meaning.
+         $veda_ocsc_store_cap_flags[19:0]     = /vreg[$veda_rd_cap]$flags;
          $veda_ocsc_store_tag                 = /vreg[$veda_rd_cap]$tag;
-         $veda_ocsc_packed[127:0] = {$veda_ocsc_store_cap_object_id, $veda_ocsc_store_cap_base,
+         // R2b: the 256-bit memory image. Object_ID(44) Base(56) Length(40)
+         // Offset(40) Perms(16) otype(16) generation(24) flags(20) = 256
+         // EXACTLY -- the old layout was 127 data bits + a 1'b0 pad, and
+         // that pad no longer exists. Widths must sum to exactly 256: if any
+         // one source were left narrow the concat under-fills and every
+         // field below it slides, with no diagnostic.
+         $veda_ocsc_packed[255:0] = {$veda_ocsc_store_cap_object_id, $veda_ocsc_store_cap_base,
                                       $veda_ocsc_store_cap_length, $veda_ocsc_store_cap_offset,
                                       $veda_ocsc_store_cap_perms, $veda_ocsc_store_cap_otype,
-                                      $veda_ocsc_store_cap_reserved, 1'b0};
+                                      $veda_ocsc_store_cap_reserved, $veda_ocsc_store_cap_flags};
          // Only consumed by the trailing raw \SV always_ff block below
          // (invisible to SandPiper's own TLV-level dependency tracking,
          // same real reason $veda_ocs_value needed this).
@@ -1913,8 +1946,8 @@
          // "negative" needs no $signed() cast, avoiding the real
          // misparse issue already documented and fixed once in this
          // project (the `$` sigil collides with TL-Verilog's own syntax).
-         $veda_oca_sum[63:0] = {48'b0, $veda_rs1cap_offset} + $rs2_data;
-         $veda_oca_out_of_range = $veda_oca_sum[63] || ($veda_oca_sum >= {48'b0, $veda_rs1cap_length});
+         $veda_oca_sum[63:0] = {24'b0, $veda_rs1cap_offset} + $rs2_data;
+         $veda_oca_out_of_range = $veda_oca_sum[63] || ($veda_oca_sum >= {24'b0, $veda_rs1cap_length});
          $veda_oca_ok = $veda_rs1cap_tag && !$veda_oca_out_of_range && ($veda_rs1cap_otype == 16'hFFFF);
          // CAndPerm: no bounds term (masking Perms cannot leave the window);
          // Tag survives only a tagged, unsealed source.
@@ -1926,13 +1959,13 @@
          //  the decode comment above.
          // ─────────────────────────────────────────────────────────
          $veda_capquery_result[63:0] =
-            $is_veda_cgetbase   ? {32'b0, $veda_rs1cap_base} :
-            $is_veda_cgetlen    ? {48'b0, $veda_rs1cap_length} :
+            $is_veda_cgetbase   ? {8'b0, $veda_rs1cap_base} :
+            $is_veda_cgetlen    ? {24'b0, $veda_rs1cap_length} :
             $is_veda_cgetperm   ? {48'b0, $veda_rs1cap_perms} :
             $is_veda_cgettag    ? {63'b0, $veda_rs1cap_tag} :
             $is_veda_cgettype   ? {48'b0, $veda_rs1cap_otype} :
-            $is_veda_cgetaddr   ? ({32'b0, $veda_rs1cap_base} + {48'b0, $veda_rs1cap_offset}) :
-            $is_veda_cgetoffset ? {48'b0, $veda_rs1cap_offset} :
+            $is_veda_cgetaddr   ? ({8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset}) :
+            $is_veda_cgetoffset ? {24'b0, $veda_rs1cap_offset} :
                                   64'b0;
 
          // ─────────────────────────────────────────────────────────
@@ -1949,7 +1982,11 @@
          // Monotonic narrowing: the new window, starting at the current
          // position, must not extend past cs1's own remaining Length --
          // the same principle already applied for CSetBounds in Sail.
-         $veda_csetbounds_window_ok = (({48'b0, $veda_rs1cap_offset}) + {48'b0, $rs2_data[15:0]}) <= {48'b0, $veda_rs1cap_length};
+         // R2b: compared in a uniform 64-bit domain. Offset/Length are 40 bits
+         // now while rs2_data is 64, so mixing a {24'b0,40} term with a
+         // {48'b0,16} term would silently size the expression to the widest
+         // operand and compare misaligned magnitudes.
+         $veda_csetbounds_window_ok = (({24'b0, $veda_rs1cap_offset}) + {48'b0, $rs2_data[15:0]}) <= {24'b0, $veda_rs1cap_length};
          $veda_csetbounds_ok = $veda_rs1cap_tag && !$veda_sealed && $veda_csetbounds_window_ok;
 
          // ─────────────────────────────────────────────────────────
@@ -1966,8 +2003,8 @@
          //  from anything above.
          // ─────────────────────────────────────────────────────────
          $veda_cs2_tag          = /vreg[$veda_cseal_cunseal_rs2_cap]$tag;
-         $veda_cs2_length[15:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$length;
-         $veda_cs2_offset[15:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$offset;
+         $veda_cs2_length[39:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$length;
+         $veda_cs2_offset[39:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$offset;
          $veda_cs2_perms[15:0]  = /vreg[$veda_cseal_cunseal_rs2_cap]$perms;
          $veda_cs2_otype[15:0]  = /vreg[$veda_cseal_cunseal_rs2_cap]$otype;
          $veda_cs2_sealed       = ($veda_cs2_otype != 16'hFFFF);
@@ -1975,9 +2012,9 @@
          // (cs2 there is only ever a type-authority, never copied into
          // cd), but needed by OCInvoke below, which really does copy
          // cs2's own full field set into c15 (IDC) on success.
-         $veda_cs2_object_id[22:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$object_id;
-         $veda_cs2_base[31:0]      = /vreg[$veda_cseal_cunseal_rs2_cap]$base;
-         $veda_cs2_reserved[7:0]   = /vreg[$veda_cseal_cunseal_rs2_cap]$reserved;
+         $veda_cs2_object_id[43:0] = /vreg[$veda_cseal_cunseal_rs2_cap]$object_id;
+         $veda_cs2_base[55:0]      = /vreg[$veda_cseal_cunseal_rs2_cap]$base;
+         $veda_cs2_reserved[23:0]  = /vreg[$veda_cseal_cunseal_rs2_cap]$reserved;
 
          // CSeal: cs2 must be a live, unsealed, Permit_Seal-carrying
          // (Perms bit 8, matching veda_types.sail's PERM_SEAL=8, the
@@ -2101,7 +2138,7 @@
          // "clear bit 0 as for RISCV JALR" is a no-op here, since
          // Base/Offset are already byte-address-aligned integers with
          // no such low bit convention to clear.
-         $veda_ocinvoke_target[63:0] = {32'b0, $veda_rs1cap_base} + {48'b0, $veda_rs1cap_offset};
+         $veda_ocinvoke_target[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
 
          // ─────────────────────────────────────────────────────────
          //  OCJALR (Milestone 17, veda-core/STACK_FRAME_CALL_RETURN_
@@ -2169,7 +2206,7 @@
             !$veda_cs2_perms[9]                     ? $veda_cseal_cunseal_rs2_cap :
             ($veda_cs2_offset != $veda_rs1cap_otype) ? $veda_ocl_ocs_rs1_cap :
                                                         $veda_ocl_ocs_rs1_cap;
-         $veda_ocjalr_target[63:0] = {32'b0, $veda_rs1cap_base} + {48'b0, $veda_rs1cap_offset};
+         $veda_ocjalr_target[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
 
          // ─────────────────────────────────────────────────────────
          //  Minimal OS kernel Milestone B (MILESTONE_B_RESULTS.md):
@@ -2234,7 +2271,7 @@
             !$veda_sealed                        ? 5'h03 :
             ($veda_rs1cap_otype != 16'hFFFE)     ? 5'h03 :
                                                     5'h11; // remaining case: cs1 not executable
-         $veda_ocreturn_target[63:0] = {32'b0, $veda_rs1cap_base} + {48'b0, $veda_rs1cap_offset};
+         $veda_ocreturn_target[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
 
          // ─────────────────────────────────────────────────────────
          //  RTL MILESTONE 11: OSpecialRW + capability-authority-gated
@@ -2293,16 +2330,16 @@
          $veda_oda_tag = (|cpu$reset || |cpu>>1$reset) ? 1'b0 :
                           (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_tag :
                                                                                         >>1$veda_oda_tag;
-         $veda_oda_object_id[22:0] = (|cpu$reset || |cpu>>1$reset) ? 23'b0 :
+         $veda_oda_object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :
                                       (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_object_id :
                                                                                                      >>1$veda_oda_object_id;
-         $veda_oda_base[31:0] = (|cpu$reset || |cpu>>1$reset) ? 32'b0 :
+         $veda_oda_base[55:0] = (|cpu$reset || |cpu>>1$reset) ? 56'b0 :
                                  (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_base :
                                                                                                 >>1$veda_oda_base;
-         $veda_oda_length[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_oda_length[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_length :
                                                                                                   >>1$veda_oda_length;
-         $veda_oda_offset[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_oda_offset[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_offset :
                                                                                                   >>1$veda_oda_offset;
          $veda_oda_perms[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
@@ -2311,7 +2348,7 @@
          $veda_oda_otype[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'hFFFF :
                                   (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_otype :
                                                                                                  >>1$veda_oda_otype;
-         $veda_oda_reserved[7:0] = (|cpu$reset || |cpu>>1$reset) ? 8'b0 :
+         $veda_oda_reserved[23:0] = (|cpu$reset || |cpu>>1$reset) ? 24'b0 :
                                     (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_reserved :
                                                                                                    >>1$veda_oda_reserved;
 
@@ -2334,16 +2371,16 @@
          $veda_tsc_tag = (|cpu$reset || |cpu>>1$reset) ? 1'b0 :
                           (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_tag :
                                                                                         >>1$veda_tsc_tag;
-         $veda_tsc_object_id[22:0] = (|cpu$reset || |cpu>>1$reset) ? 23'b0 :
+         $veda_tsc_object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :
                                       (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_object_id :
                                                                                                      >>1$veda_tsc_object_id;
-         $veda_tsc_base[31:0] = (|cpu$reset || |cpu>>1$reset) ? 32'b0 :
+         $veda_tsc_base[55:0] = (|cpu$reset || |cpu>>1$reset) ? 56'b0 :
                                  (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_base :
                                                                                                 >>1$veda_tsc_base;
-         $veda_tsc_length[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_tsc_length[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_length :
                                                                                                   >>1$veda_tsc_length;
-         $veda_tsc_offset[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_tsc_offset[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_offset :
                                                                                                   >>1$veda_tsc_offset;
          $veda_tsc_perms[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
@@ -2352,7 +2389,7 @@
          $veda_tsc_otype[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'hFFFF :
                                   (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_otype :
                                                                                                  >>1$veda_tsc_otype;
-         $veda_tsc_reserved[7:0] = (|cpu$reset || |cpu>>1$reset) ? 8'b0 :
+         $veda_tsc_reserved[23:0] = (|cpu$reset || |cpu>>1$reset) ? 24'b0 :
                                     (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_tsc) ? >>1$veda_rs1cap_reserved :
                                                                                                    >>1$veda_tsc_reserved;
 
@@ -2378,16 +2415,16 @@
                           (>>1$is_veda_ocreturn && !>>1$veda_ocreturn_violation) ? 1'b0 :
                           (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_tag :
                                                                                         >>1$veda_ssc_tag;
-         $veda_ssc_object_id[22:0] = (|cpu$reset || |cpu>>1$reset) ? 23'b0 :
+         $veda_ssc_object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :
                                       (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_object_id :
                                                                                                      >>1$veda_ssc_object_id;
-         $veda_ssc_base[31:0] = (|cpu$reset || |cpu>>1$reset) ? 32'b0 :
+         $veda_ssc_base[55:0] = (|cpu$reset || |cpu>>1$reset) ? 56'b0 :
                                  (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_base :
                                                                                                 >>1$veda_ssc_base;
-         $veda_ssc_length[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_ssc_length[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_length :
                                                                                                   >>1$veda_ssc_length;
-         $veda_ssc_offset[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+         $veda_ssc_offset[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
                                    (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_offset :
                                                                                                   >>1$veda_ssc_offset;
          $veda_ssc_perms[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
@@ -2396,7 +2433,7 @@
          $veda_ssc_otype[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'hFFFF :
                                   (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_otype :
                                                                                                  >>1$veda_ssc_otype;
-         $veda_ssc_reserved[7:0] = (|cpu$reset || |cpu>>1$reset) ? 8'b0 :
+         $veda_ssc_reserved[23:0] = (|cpu$reset || |cpu>>1$reset) ? 24'b0 :
                                     (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && >>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_reserved :
                                                                                                    >>1$veda_ssc_reserved;
 
@@ -2412,7 +2449,7 @@
          //  memory dispatch NMC_ADD is) -- the identical permission split
          //  already reasoned through and built in Sail.
          // ─────────────────────────────────────────────────────────
-         $veda_cap_real_addr[63:0] = {32'b0, $veda_rs1cap_base} + {48'b0, $veda_rs1cap_offset};
+         $veda_cap_real_addr[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
          $veda_cap_old_d[63:0] =
             {elfmem[$veda_cap_real_addr[31:0]+7], elfmem[$veda_cap_real_addr[31:0]+6],
              elfmem[$veda_cap_real_addr[31:0]+5], elfmem[$veda_cap_real_addr[31:0]+4],
@@ -2423,8 +2460,8 @@
              elfmem[$veda_cap_real_addr[31:0]+1], elfmem[$veda_cap_real_addr[31:0]+0]};
 
          $veda_perm_nmc_ok = $veda_rs1cap_perms[12];
-         $veda_nmc_bounds_ok_d = (({48'b0, $veda_rs1cap_offset}) + 64'd8) <= {48'b0, $veda_rs1cap_length};
-         $veda_nmc_bounds_ok_w = (({48'b0, $veda_rs1cap_offset}) + 64'd4) <= {48'b0, $veda_rs1cap_length};
+         $veda_nmc_bounds_ok_d = (({24'b0, $veda_rs1cap_offset}) + 64'd8) <= {24'b0, $veda_rs1cap_length};
+         $veda_nmc_bounds_ok_w = (({24'b0, $veda_rs1cap_offset}) + 64'd4) <= {24'b0, $veda_rs1cap_length};
 
          // Only consumed by the trailing raw \SV always_ff block below
          // (invisible to SandPiper's own TLV-level dependency tracking,
@@ -3160,35 +3197,57 @@
          // elfmem[] itself, matching the design's own genuinely-separate
          // -array precedent), a DRAM-tier one reads from elfmem[]
          // exactly as every prior milestone already did.
-         $veda_oclc_load_data[127:0] =
+         // R2b: a capability is 32 bytes now -- both arms read 32, not 16.
+         $veda_oclc_load_data[255:0] =
             $veda_capmem_tcm_hit ?
-            {tcm_scratch[$veda_real_addr[31:0]+15], tcm_scratch[$veda_real_addr[31:0]+14],
+            {tcm_scratch[$veda_real_addr[31:0]+31], tcm_scratch[$veda_real_addr[31:0]+30],
+             tcm_scratch[$veda_real_addr[31:0]+29], tcm_scratch[$veda_real_addr[31:0]+28],
+             tcm_scratch[$veda_real_addr[31:0]+27], tcm_scratch[$veda_real_addr[31:0]+26],
+             tcm_scratch[$veda_real_addr[31:0]+25], tcm_scratch[$veda_real_addr[31:0]+24],
+             tcm_scratch[$veda_real_addr[31:0]+23], tcm_scratch[$veda_real_addr[31:0]+22],
+             tcm_scratch[$veda_real_addr[31:0]+21], tcm_scratch[$veda_real_addr[31:0]+20],
+             tcm_scratch[$veda_real_addr[31:0]+19], tcm_scratch[$veda_real_addr[31:0]+18],
+             tcm_scratch[$veda_real_addr[31:0]+17], tcm_scratch[$veda_real_addr[31:0]+16],
+             tcm_scratch[$veda_real_addr[31:0]+15], tcm_scratch[$veda_real_addr[31:0]+14],
              tcm_scratch[$veda_real_addr[31:0]+13], tcm_scratch[$veda_real_addr[31:0]+12],
              tcm_scratch[$veda_real_addr[31:0]+11], tcm_scratch[$veda_real_addr[31:0]+10],
-             tcm_scratch[$veda_real_addr[31:0]+9],  tcm_scratch[$veda_real_addr[31:0]+8],
-             tcm_scratch[$veda_real_addr[31:0]+7],  tcm_scratch[$veda_real_addr[31:0]+6],
-             tcm_scratch[$veda_real_addr[31:0]+5],  tcm_scratch[$veda_real_addr[31:0]+4],
-             tcm_scratch[$veda_real_addr[31:0]+3],  tcm_scratch[$veda_real_addr[31:0]+2],
-             tcm_scratch[$veda_real_addr[31:0]+1],  tcm_scratch[$veda_real_addr[31:0]+0]} :
-            {elfmem[$veda_real_addr[31:0]+15], elfmem[$veda_real_addr[31:0]+14],
+             tcm_scratch[$veda_real_addr[31:0]+9], tcm_scratch[$veda_real_addr[31:0]+8],
+             tcm_scratch[$veda_real_addr[31:0]+7], tcm_scratch[$veda_real_addr[31:0]+6],
+             tcm_scratch[$veda_real_addr[31:0]+5], tcm_scratch[$veda_real_addr[31:0]+4],
+             tcm_scratch[$veda_real_addr[31:0]+3], tcm_scratch[$veda_real_addr[31:0]+2],
+             tcm_scratch[$veda_real_addr[31:0]+1], tcm_scratch[$veda_real_addr[31:0]+0]} :
+            {elfmem[$veda_real_addr[31:0]+31], elfmem[$veda_real_addr[31:0]+30],
+             elfmem[$veda_real_addr[31:0]+29], elfmem[$veda_real_addr[31:0]+28],
+             elfmem[$veda_real_addr[31:0]+27], elfmem[$veda_real_addr[31:0]+26],
+             elfmem[$veda_real_addr[31:0]+25], elfmem[$veda_real_addr[31:0]+24],
+             elfmem[$veda_real_addr[31:0]+23], elfmem[$veda_real_addr[31:0]+22],
+             elfmem[$veda_real_addr[31:0]+21], elfmem[$veda_real_addr[31:0]+20],
+             elfmem[$veda_real_addr[31:0]+19], elfmem[$veda_real_addr[31:0]+18],
+             elfmem[$veda_real_addr[31:0]+17], elfmem[$veda_real_addr[31:0]+16],
+             elfmem[$veda_real_addr[31:0]+15], elfmem[$veda_real_addr[31:0]+14],
              elfmem[$veda_real_addr[31:0]+13], elfmem[$veda_real_addr[31:0]+12],
              elfmem[$veda_real_addr[31:0]+11], elfmem[$veda_real_addr[31:0]+10],
-             elfmem[$veda_real_addr[31:0]+9],  elfmem[$veda_real_addr[31:0]+8],
-             elfmem[$veda_real_addr[31:0]+7],  elfmem[$veda_real_addr[31:0]+6],
-             elfmem[$veda_real_addr[31:0]+5],  elfmem[$veda_real_addr[31:0]+4],
-             elfmem[$veda_real_addr[31:0]+3],  elfmem[$veda_real_addr[31:0]+2],
-             elfmem[$veda_real_addr[31:0]+1],  elfmem[$veda_real_addr[31:0]+0]};
+             elfmem[$veda_real_addr[31:0]+9], elfmem[$veda_real_addr[31:0]+8],
+             elfmem[$veda_real_addr[31:0]+7], elfmem[$veda_real_addr[31:0]+6],
+             elfmem[$veda_real_addr[31:0]+5], elfmem[$veda_real_addr[31:0]+4],
+             elfmem[$veda_real_addr[31:0]+3], elfmem[$veda_real_addr[31:0]+2],
+             elfmem[$veda_real_addr[31:0]+1], elfmem[$veda_real_addr[31:0]+0]};
          // Field-for-field the inverse of $veda_ocsc_packed's own pack
          // order above (Object_ID @ Base @ Length @ Offset @ Perms @
          // otype @ Reserved @ 1'b0 padding) -- matching the Sail model's
          // veda_cap_unpack exactly.
-         $veda_oclc_unpacked_object_id[22:0] = $veda_oclc_load_data[127:105];
-         $veda_oclc_unpacked_base[31:0]      = $veda_oclc_load_data[104:73];
-         $veda_oclc_unpacked_length[15:0]    = $veda_oclc_load_data[72:57];
-         $veda_oclc_unpacked_offset[15:0]    = $veda_oclc_load_data[56:41];
-         $veda_oclc_unpacked_perms[15:0]     = $veda_oclc_load_data[40:25];
-         $veda_oclc_unpacked_otype[15:0]     = $veda_oclc_load_data[24:9];
-         $veda_oclc_unpacked_reserved[7:0]   = $veda_oclc_load_data[8:1];
+         // R2b: transcribed from DESIGN_01's layout table character by
+         // character, NOT re-derived from widths -- Perms [75:60] and otype
+         // [59:44] are the two a width-driven review skips because their
+         // widths did not change, yet their POSITIONS moved.
+         $veda_oclc_unpacked_object_id[43:0] = $veda_oclc_load_data[255:212];
+         $veda_oclc_unpacked_base[55:0]      = $veda_oclc_load_data[211:156];
+         $veda_oclc_unpacked_length[39:0]    = $veda_oclc_load_data[155:116];
+         $veda_oclc_unpacked_offset[39:0]    = $veda_oclc_load_data[115:76];
+         $veda_oclc_unpacked_perms[15:0]     = $veda_oclc_load_data[75:60];
+         $veda_oclc_unpacked_otype[15:0]     = $veda_oclc_load_data[59:44];
+         $veda_oclc_unpacked_reserved[23:0]  = $veda_oclc_load_data[43:20];
+         $veda_oclc_unpacked_flags[19:0]     = $veda_oclc_load_data[19:0];
          // The memory-resident Tag -- a capability loaded from memory is
          // only as trustworthy as what a real OCS.C genuinely stored
          // there (tag_mem[]), never assumed true just because the load
@@ -3632,6 +3691,7 @@
          // object that genuinely owns this slot (the two new checks
          // above).
          odt_mem[CPU_veda_odt_addr_a0+11] <= CPU_veda_object_id_a0[15:8];
+         // INTERIM BRIDGE R3: id_hi write, pre-respec 23-bit ODT layout.
          odt_mem[CPU_veda_odt_addr_a0+12] <= {1'b0, CPU_veda_object_id_a0[22:16]};
          // RTL MILESTONE 16: commit the retirement bit computed above --
          // once generation would wrap, this slot can never legitimately
@@ -3681,40 +3741,72 @@
    // on the write side too.
    always_ff @(posedge clk) begin
       if (act4_mode && CPU_is_veda_ocs_c_a0 && !CPU_veda_ocsc_violation_a0 && CPU_veda_capmem_tcm_hit_a0) begin
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+0]  <= CPU_veda_ocsc_packed_a0[7:0];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+1]  <= CPU_veda_ocsc_packed_a0[15:8];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+2]  <= CPU_veda_ocsc_packed_a0[23:16];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+3]  <= CPU_veda_ocsc_packed_a0[31:24];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+4]  <= CPU_veda_ocsc_packed_a0[39:32];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+5]  <= CPU_veda_ocsc_packed_a0[47:40];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+6]  <= CPU_veda_ocsc_packed_a0[55:48];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+7]  <= CPU_veda_ocsc_packed_a0[63:56];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+8]  <= CPU_veda_ocsc_packed_a0[71:64];
-         tcm_scratch[CPU_veda_real_addr_a0[31:0]+9]  <= CPU_veda_ocsc_packed_a0[79:72];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+0] <= CPU_veda_ocsc_packed_a0[7:0];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+1] <= CPU_veda_ocsc_packed_a0[15:8];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+2] <= CPU_veda_ocsc_packed_a0[23:16];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+3] <= CPU_veda_ocsc_packed_a0[31:24];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+4] <= CPU_veda_ocsc_packed_a0[39:32];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+5] <= CPU_veda_ocsc_packed_a0[47:40];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+6] <= CPU_veda_ocsc_packed_a0[55:48];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+7] <= CPU_veda_ocsc_packed_a0[63:56];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+8] <= CPU_veda_ocsc_packed_a0[71:64];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+9] <= CPU_veda_ocsc_packed_a0[79:72];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+10] <= CPU_veda_ocsc_packed_a0[87:80];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+11] <= CPU_veda_ocsc_packed_a0[95:88];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+12] <= CPU_veda_ocsc_packed_a0[103:96];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+13] <= CPU_veda_ocsc_packed_a0[111:104];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+14] <= CPU_veda_ocsc_packed_a0[119:112];
          tcm_scratch[CPU_veda_real_addr_a0[31:0]+15] <= CPU_veda_ocsc_packed_a0[127:120];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+16] <= CPU_veda_ocsc_packed_a0[135:128];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+17] <= CPU_veda_ocsc_packed_a0[143:136];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+18] <= CPU_veda_ocsc_packed_a0[151:144];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+19] <= CPU_veda_ocsc_packed_a0[159:152];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+20] <= CPU_veda_ocsc_packed_a0[167:160];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+21] <= CPU_veda_ocsc_packed_a0[175:168];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+22] <= CPU_veda_ocsc_packed_a0[183:176];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+23] <= CPU_veda_ocsc_packed_a0[191:184];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+24] <= CPU_veda_ocsc_packed_a0[199:192];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+25] <= CPU_veda_ocsc_packed_a0[207:200];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+26] <= CPU_veda_ocsc_packed_a0[215:208];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+27] <= CPU_veda_ocsc_packed_a0[223:216];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+28] <= CPU_veda_ocsc_packed_a0[231:224];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+29] <= CPU_veda_ocsc_packed_a0[239:232];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+30] <= CPU_veda_ocsc_packed_a0[247:240];
+         tcm_scratch[CPU_veda_real_addr_a0[31:0]+31] <= CPU_veda_ocsc_packed_a0[255:248];
          tcm_scratch_tag[CPU_veda_capmem_tcm_granule_a0] <= CPU_veda_ocsc_store_tag_a0;
       end else if (act4_mode && CPU_is_veda_ocs_c_a0 && !CPU_veda_ocsc_violation_a0) begin
-         elfmem[CPU_veda_real_addr_a0[31:0]+0]  <= CPU_veda_ocsc_packed_a0[7:0];
-         elfmem[CPU_veda_real_addr_a0[31:0]+1]  <= CPU_veda_ocsc_packed_a0[15:8];
-         elfmem[CPU_veda_real_addr_a0[31:0]+2]  <= CPU_veda_ocsc_packed_a0[23:16];
-         elfmem[CPU_veda_real_addr_a0[31:0]+3]  <= CPU_veda_ocsc_packed_a0[31:24];
-         elfmem[CPU_veda_real_addr_a0[31:0]+4]  <= CPU_veda_ocsc_packed_a0[39:32];
-         elfmem[CPU_veda_real_addr_a0[31:0]+5]  <= CPU_veda_ocsc_packed_a0[47:40];
-         elfmem[CPU_veda_real_addr_a0[31:0]+6]  <= CPU_veda_ocsc_packed_a0[55:48];
-         elfmem[CPU_veda_real_addr_a0[31:0]+7]  <= CPU_veda_ocsc_packed_a0[63:56];
-         elfmem[CPU_veda_real_addr_a0[31:0]+8]  <= CPU_veda_ocsc_packed_a0[71:64];
-         elfmem[CPU_veda_real_addr_a0[31:0]+9]  <= CPU_veda_ocsc_packed_a0[79:72];
+         elfmem[CPU_veda_real_addr_a0[31:0]+0] <= CPU_veda_ocsc_packed_a0[7:0];
+         elfmem[CPU_veda_real_addr_a0[31:0]+1] <= CPU_veda_ocsc_packed_a0[15:8];
+         elfmem[CPU_veda_real_addr_a0[31:0]+2] <= CPU_veda_ocsc_packed_a0[23:16];
+         elfmem[CPU_veda_real_addr_a0[31:0]+3] <= CPU_veda_ocsc_packed_a0[31:24];
+         elfmem[CPU_veda_real_addr_a0[31:0]+4] <= CPU_veda_ocsc_packed_a0[39:32];
+         elfmem[CPU_veda_real_addr_a0[31:0]+5] <= CPU_veda_ocsc_packed_a0[47:40];
+         elfmem[CPU_veda_real_addr_a0[31:0]+6] <= CPU_veda_ocsc_packed_a0[55:48];
+         elfmem[CPU_veda_real_addr_a0[31:0]+7] <= CPU_veda_ocsc_packed_a0[63:56];
+         elfmem[CPU_veda_real_addr_a0[31:0]+8] <= CPU_veda_ocsc_packed_a0[71:64];
+         elfmem[CPU_veda_real_addr_a0[31:0]+9] <= CPU_veda_ocsc_packed_a0[79:72];
          elfmem[CPU_veda_real_addr_a0[31:0]+10] <= CPU_veda_ocsc_packed_a0[87:80];
          elfmem[CPU_veda_real_addr_a0[31:0]+11] <= CPU_veda_ocsc_packed_a0[95:88];
          elfmem[CPU_veda_real_addr_a0[31:0]+12] <= CPU_veda_ocsc_packed_a0[103:96];
          elfmem[CPU_veda_real_addr_a0[31:0]+13] <= CPU_veda_ocsc_packed_a0[111:104];
          elfmem[CPU_veda_real_addr_a0[31:0]+14] <= CPU_veda_ocsc_packed_a0[119:112];
          elfmem[CPU_veda_real_addr_a0[31:0]+15] <= CPU_veda_ocsc_packed_a0[127:120];
+         elfmem[CPU_veda_real_addr_a0[31:0]+16] <= CPU_veda_ocsc_packed_a0[135:128];
+         elfmem[CPU_veda_real_addr_a0[31:0]+17] <= CPU_veda_ocsc_packed_a0[143:136];
+         elfmem[CPU_veda_real_addr_a0[31:0]+18] <= CPU_veda_ocsc_packed_a0[151:144];
+         elfmem[CPU_veda_real_addr_a0[31:0]+19] <= CPU_veda_ocsc_packed_a0[159:152];
+         elfmem[CPU_veda_real_addr_a0[31:0]+20] <= CPU_veda_ocsc_packed_a0[167:160];
+         elfmem[CPU_veda_real_addr_a0[31:0]+21] <= CPU_veda_ocsc_packed_a0[175:168];
+         elfmem[CPU_veda_real_addr_a0[31:0]+22] <= CPU_veda_ocsc_packed_a0[183:176];
+         elfmem[CPU_veda_real_addr_a0[31:0]+23] <= CPU_veda_ocsc_packed_a0[191:184];
+         elfmem[CPU_veda_real_addr_a0[31:0]+24] <= CPU_veda_ocsc_packed_a0[199:192];
+         elfmem[CPU_veda_real_addr_a0[31:0]+25] <= CPU_veda_ocsc_packed_a0[207:200];
+         elfmem[CPU_veda_real_addr_a0[31:0]+26] <= CPU_veda_ocsc_packed_a0[215:208];
+         elfmem[CPU_veda_real_addr_a0[31:0]+27] <= CPU_veda_ocsc_packed_a0[223:216];
+         elfmem[CPU_veda_real_addr_a0[31:0]+28] <= CPU_veda_ocsc_packed_a0[231:224];
+         elfmem[CPU_veda_real_addr_a0[31:0]+29] <= CPU_veda_ocsc_packed_a0[239:232];
+         elfmem[CPU_veda_real_addr_a0[31:0]+30] <= CPU_veda_ocsc_packed_a0[247:240];
+         elfmem[CPU_veda_real_addr_a0[31:0]+31] <= CPU_veda_ocsc_packed_a0[255:248];
          tag_mem[CPU_veda_capmem_granule_a0] <= CPU_veda_ocsc_store_tag_a0;
       end
    end

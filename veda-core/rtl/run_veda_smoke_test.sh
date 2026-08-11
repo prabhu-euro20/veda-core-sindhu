@@ -337,6 +337,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_candperm_neg.vvp" "$SIM/veda_core.sv" "$S
 echo "==> Simulating (CAndPerm negative)"
 vvp "$SIM/sim_candperm_neg.vvp" +elf_hex="$SIM/veda_smoke_candperm_neg.hex"
 
+echo "==> R2b: Compiling (256-bit capability -- every field exact across a memory round-trip)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_cap256.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap256_roundtrip.sv"
+echo "==> Simulating (R2b 256-bit round-trip)"
+vvp "$SIM/sim_cap256.vvp" +elf_hex="$SIM/veda_smoke_cap256_roundtrip.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"
