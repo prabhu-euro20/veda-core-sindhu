@@ -38,9 +38,14 @@ _start:
     .insn i 0x0b, 0x5, x0, a0, 0          # veda.bind c0, a0
 
     # Object 2: SPILL region (Load|Store) -- ordinary .data.
+    # Length 0x0020, not 0x0010: as of the 256-bit capability respec a
+    # capability occupies 32 bytes in memory, so a spill slot must be at
+    # least 32 bytes or OCS.C is legitimately out of bounds. This is a real
+    # ABI consequence of the format change, not a test fudge -- any software
+    # spilling capabilities must size its slots the same way.
     la   t0, g_spill
     slli t0, t0, 32
-    li   t1, 0x0010000C
+    li   t1, 0x0020000C
     or   t0, t0, t1
     li   a0, 2
     .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0, t0
@@ -76,7 +81,12 @@ trap_handler:
 g_data:
     .dword 0xDEAD
     .dword 0
-.align 4
+# .align 5 (32 bytes), not 4: OCL.C/OCS.C require 32-byte natural alignment
+# so one capability occupies exactly one tag granule. Four dwords, not two,
+# because a capability is now 256 bits.
+.align 5
 g_spill:
+    .dword 0
+    .dword 0
     .dword 0
     .dword 0
