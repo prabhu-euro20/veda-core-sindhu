@@ -61,12 +61,20 @@ _start:
     .insn r 0x5b, 0x0, 0x00, x13, x2, x0 # cgetbase x13, c2  -- expect 0x80010000
 
     # ---- negative: TCM offset never written -- must read back untagged ----
-    li   x3, 0x10
+    # Offset 0x20, not 0x10: as of RTL increment R2a a capability is 32 bytes
+    # and OCL.C/OCS.C require 32-byte natural alignment, so 0x10 is no longer a
+    # legal capability address (it hard-traps as misaligned) -- a real ABI
+    # consequence, not a test fudge. 0x20 + 32 = 0x40 is still in bounds
+    # (Length 0x40) and is still an offset nothing ever wrote, so the property
+    # under test -- an unwritten capability slot reads back untagged -- is
+    # unchanged.
+    li   x3, 0x20
     .insn r 0x0b, 0x4, 0x00, x3, x8, x3  # ocl.c c8, x3(=0x10), c3
     .insn r 0x5b, 0x0, 0x03, x14, x3, x0 # cgettag x14, c3  -- expect 0
 
     # ---- negative: DRAM offset never written -- must read back untagged ----
-    li   x4, 0x10
+    # Same 32-byte alignment reason as the TCM arm above.
+    li   x4, 0x20
     .insn r 0x0b, 0x4, 0x00, x4, x9, x4  # ocl.c c9, x4(=0x10), c4
     .insn r 0x5b, 0x0, 0x03, x15, x4, x0 # cgettag x15, c4  -- expect 0
 1:

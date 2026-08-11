@@ -317,6 +317,26 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_s0kneg.vvp" "$SIM/veda_core.sv" "$SIM/tb_
 echo "==> Simulating (RTL Part D: syscall0 kernel forged-Object_ID negative)"
 vvp "$SIM/sim_s0kneg.vvp" +elf_hex="$SIM/veda_smoke_syscall0_kernel_forged_neg.hex"
 
+echo "==> R2a: Compiling (32-byte tag granule -- plain store into byte 16 destroys a stored capability's tag)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_granule_tamper.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap_granule_tamper.sv"
+echo "==> Simulating (R2a granule tamper)"
+vvp "$SIM/sim_granule_tamper.vvp" +elf_hex="$SIM/veda_smoke_cap_granule_tamper.hex"
+
+echo "==> R2a: Compiling (32-byte alignment -- misaligned OCS.C hard-traps, cause 0x08)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_misaligned.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap_misaligned_neg.sv"
+echo "==> Simulating (R2a misaligned)"
+vvp "$SIM/sim_misaligned.vvp" +elf_hex="$SIM/veda_smoke_cap_misaligned_neg.hex"
+
+echo "==> CAndPerm: Compiling (rights attenuation, positive)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_candperm.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_candperm.sv"
+echo "==> Simulating (CAndPerm positive)"
+vvp "$SIM/sim_candperm.vvp" +elf_hex="$SIM/veda_smoke_candperm.hex"
+
+echo "==> CAndPerm: Compiling (sealed source soft-fails, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_candperm_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_candperm_neg.sv"
+echo "==> Simulating (CAndPerm negative)"
+vvp "$SIM/sim_candperm_neg.vvp" +elf_hex="$SIM/veda_smoke_candperm_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"

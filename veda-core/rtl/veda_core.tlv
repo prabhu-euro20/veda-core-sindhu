@@ -513,9 +513,9 @@
    //  same bytes never do, matching CHERI's own real separation between
    //  ordinary data access and capability load/store.
    // ─────────────────────────────────────────────────────────────────
-   logic tag_mem [0 : (ELFMEM_SIZE/16) - 1];
+   logic tag_mem [0 : (ELFMEM_SIZE/32) - 1];
    initial begin
-      for (int veda_tm_i = 0; veda_tm_i < (ELFMEM_SIZE/16); veda_tm_i = veda_tm_i + 1)
+      for (int veda_tm_i = 0; veda_tm_i < (ELFMEM_SIZE/32); veda_tm_i = veda_tm_i + 1)
          tag_mem[veda_tm_i] = 1'b0;
    end
 
@@ -545,9 +545,9 @@
    localparam bit [31:0] TCM_SCRATCH_BASE = 32'hA000_0000;
    localparam bit [31:0] TCM_SCRATCH_SIZE = 32'h0000_1000;
    logic [7:0] tcm_scratch [TCM_SCRATCH_BASE : TCM_SCRATCH_BASE + TCM_SCRATCH_SIZE - 1];
-   logic tcm_scratch_tag [0 : (TCM_SCRATCH_SIZE/16) - 1];
+   logic tcm_scratch_tag [0 : (TCM_SCRATCH_SIZE/32) - 1];
    initial begin
-      for (int veda_ts_i = 0; veda_ts_i < (TCM_SCRATCH_SIZE/16); veda_ts_i = veda_ts_i + 1)
+      for (int veda_ts_i = 0; veda_ts_i < (TCM_SCRATCH_SIZE/32); veda_ts_i = veda_ts_i + 1)
          tcm_scratch_tag[veda_ts_i] = 1'b0;
    end
 
@@ -1810,8 +1810,12 @@
          //  store is touched.
          // ─────────────────────────────────────────────────────────
          $veda_oclc_bounds_ok = (($rs2_data + 64'd16) <= {48'b0, $veda_rs1cap_length});
-         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok);
-         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_oclc_bounds_ok);
+         // R2a: 32-byte natural alignment is architectural for capability
+         // memory access -- it is the only rule under which
+         // one-capability-one-granule is well defined.
+         $veda_capmem_misaligned = $veda_real_addr[4:0] != 5'b0;
+         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned);
+         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned);
 
          // Tag-store granule index: $veda_real_addr is absolute
          // (ELFMEM_BASE-relative), tag_mem[] is declared 0-based
@@ -1820,8 +1824,18 @@
          // calls) -- subtract ELFMEM_BASE, then >>4 (real hardware's own
          // natural way to divide by 16, the granule size, since 16 is a
          // power of two -- the same technique already used in the Sail
-         // model's own tag-store index computation, byte_off >> 4).
-         $veda_capmem_granule[31:0] = ($veda_real_addr[31:0] - ELFMEM_BASE) >> 4;
+         // model's own tag-store index computation, byte_off >> 5).
+         // RTL mirror increment R2a: the granule is 32 bytes, matching the
+         // 256-bit capability that is about to land. One capability MUST
+         // occupy exactly one granule: with a 16-byte granule a plain store
+         // into the second half of a stored capability -- the half holding
+         // Perms/otype/generation -- would clear only that half's tag while
+         // the tag the load actually checks (the start granule) survived,
+         // i.e. a permission/generation forgery with a valid Tag. Landing
+         // the granule BEFORE the format change is deliberate: the reverse
+         // order leaves a window where the hole is open and the suite is
+         // still green.
+         $veda_capmem_granule[31:0] = ($veda_real_addr[31:0] - ELFMEM_BASE) >> 5;
 
          // MILESTONE 24 Stage 3: OCL.C/OCS.C's own TCM routing decision --
          // a real, separate address-range check on $veda_real_addr
@@ -1837,7 +1851,7 @@
          // closed by construction with its own, separate index.
          $veda_capmem_tcm_hit = ($veda_real_addr[31:0] >= TCM_SCRATCH_BASE) &&
                                  ($veda_real_addr[31:0] <  (TCM_SCRATCH_BASE + TCM_SCRATCH_SIZE));
-         $veda_capmem_tcm_granule[31:0] = ($veda_real_addr[31:0] - TCM_SCRATCH_BASE) >> 4;
+         $veda_capmem_tcm_granule[31:0] = ($veda_real_addr[31:0] - TCM_SCRATCH_BASE) >> 5;
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE RTL MILESTONE 7: byte-granular tag invalidation --
@@ -1854,7 +1868,7 @@
          //  below (both use $veda_cap_real_addr, distinct from OCL/OCS's
          //  $veda_real_addr above).
          // ─────────────────────────────────────────────────────────
-         $veda_capmem_nmc_granule[31:0] = ($veda_cap_real_addr[31:0] - ELFMEM_BASE) >> 4;
+         $veda_capmem_nmc_granule[31:0] = ($veda_cap_real_addr[31:0] - ELFMEM_BASE) >> 5;
 
          // OCS.C's own store source: rd is a Capability Register here
          // (Section 1's own field-position-reuse idiom, same as every
@@ -2480,11 +2494,13 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
+            $veda_capmem_misaligned                ? 5'h08 :
                                                       5'h01;
          $veda_ocsc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_store_ok                   ? 5'h13 :
+            $veda_capmem_misaligned                ? 5'h08 :
                                                       5'h01;
          $veda_nmc_add_w_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
@@ -3105,7 +3121,7 @@
          // principle, out of range within act4_mode -- guarded rather
          // than assumed in-range.
          $veda_baseisa_store_in_range = ($mem_addr[31:0] >= ELFMEM_BASE) && ($mem_addr[31:0] < (ELFMEM_BASE + ELFMEM_SIZE));
-         $veda_baseisa_store_granule[31:0] = ($mem_addr[31:0] - ELFMEM_BASE) >> 4;
+         $veda_baseisa_store_granule[31:0] = ($mem_addr[31:0] - ELFMEM_BASE) >> 5;
          $mem_shift_bits[5:0] = {$mem_byte_off, 3'b0};
 
          $mem_cur_word[63:0] = /dmem[$mem_word_idx]$val;
@@ -3491,7 +3507,7 @@
          // that granule's tag, the identical real property every Veda
          // write block below also now enforces. Gated on
          // CPU_veda_baseisa_store_in_range_a0 -- tag_mem[] is a real,
-         // bounded array (ELFMEM_SIZE/16 entries), an out-of-range index
+         // bounded array (ELFMEM_SIZE/32 entries), an out-of-range index
          // here would be a real simulation error, not assumed safe.
          if (CPU_veda_baseisa_store_in_range_a0) begin
             tag_mem[CPU_veda_baseisa_store_granule_a0] <= 1'b0;
