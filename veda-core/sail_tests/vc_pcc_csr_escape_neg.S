@@ -10,7 +10,7 @@ _start:
     # trap, no restriction, using only instructions that already existed.
     # Attempts a malicious write of 0x1000 -- deliberately distinct from
     # both the compartment's own original Length (0x0040) and
-    # VEDA_PCC_UNBOUNDED (0xFFFF) -- so a successful escape and a
+    # VEDA_PCC_UNBOUNDED (0xFFFFFFFFFF) -- so a successful escape and a
     # correctly-blocked write are unambiguously distinguishable by the
     # final CSR value alone, not just by whether a trap fired at all.
     la   t0, trap_handler
@@ -64,7 +64,7 @@ trap_handler:
     # the identical discipline every other real Veda trap already
     # follows).
     csrr t5, 0x7c1
-    li   t6, 0xFFFF
+    li   t6, 0xFFFFFFFFFF         # VEDA_PCC_UNBOUNDED -- Length widened 16 -> 40 bits, sentinel is all-ones
     bne  t5, t6, fail
 
     li   x21, 0x600D

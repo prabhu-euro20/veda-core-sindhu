@@ -12,7 +12,7 @@ _start:
     # the bookkeeping itself is correct, field-for-field, via the new
     # veda_pcc_base/veda_pcc_length CSRs (0x7c0/0x7c1).
 
-    csrr x9, 0x7c1                # pcc_length BEFORE any OCInvoke -- expect 0xFFFF (VEDA_PCC_UNBOUNDED, the real reset value)
+    csrr x9, 0x7c1                # pcc_length BEFORE any OCInvoke -- expect 0xFFFFFFFFFF (VEDA_PCC_UNBOUNDED, the real reset value; Length widened 16 -> 40 bits)
 
     # -- Object_ID=50 (CODE): Permit_Execute|Permit_Invoke = 0x0402,
     #    Base = landing_pad's own runtime address, Length=0x0100 (256
@@ -53,16 +53,23 @@ landing_pad:
     csrr x10, 0x7c0                # pcc_base AFTER OCInvoke -- expect landing_pad's own runtime address
     csrr x11, 0x7c1                # pcc_length AFTER OCInvoke -- expect 0x0100
 
-    # -- Object_ID=53 (return CODE): Base=return_pad, Length=0xFFFF
-    #    (VEDA_PCC_UNBOUNDED -- a real, deliberate "return to the
-    #    unconstrained caller context" capability, Perms=0x0402). --
-    la   t0, return_pad
-    slli t0, t0, 32
-    li   t1, 0xFFFF0402
-    or   t0, t0, t1
+    # -- Object_ID=53 (return CODE): Base=return_pad,
+    #    Length=0xFFFFFFFFFF (VEDA_PCC_UNBOUNDED -- a real, deliberate
+    #    "return to the unconstrained caller context" capability,
+    #    Perms=0x0402). Length widened 16 -> 40 bits, so the unbounded
+    #    sentinel no longer fits the compact single-GPR descriptor's own
+    #    16-bit Length field (0xFFFF is now a real 65535-byte bound, not
+    #    saturation) -- this object therefore has to use the WIDE populate
+    #    path, Base straight from a GPR at full width and Length|Perms
+    #    from veda_attr (CSR 0x7C4). The finite-Length objects above keep
+    #    the compact form unchanged. --
+    li   t1, 0xFFFFFFFFFF                # VEDA_PCC_UNBOUNDED
+    slli t1, t1, 16                      # veda_attr = Length[55:16] | Perms[15:0]
+    ori  t1, t1, 0x402                   # Permit_Execute|Permit_Invoke
+    csrw 0x7C4, t1
+    la   x2, return_pad                  # Base, full width, no packing/shifting
     li   x1, 53
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x2  # veda.odt.populate.fast x5, x1, x2
 
     # -- Object_ID=54 (return DATA): Permit_Invoke only = 0x0400. --
     li   x1, 54
@@ -80,15 +87,15 @@ landing_pad:
     .insn r 0x5b, 0x1, 0x12, x0, x7, x8  # ocinvoke c7, c8   -- widens PCC back to unbounded
 
 return_pad:
-    csrr x12, 0x7c1                # pcc_length AFTER the return OCInvoke -- expect 0xFFFF again
+    csrr x12, 0x7c1                # pcc_length AFTER the return OCInvoke -- expect 0xFFFFFFFFFF again
 
-    li   t2, 0xFFFF
+    li   t2, 0xFFFFFFFFFF          # VEDA_PCC_UNBOUNDED -- 40-bit Length field, all ones
     bne  x9, t2, fail
     la   t2, landing_pad
     bne  x10, t2, fail
     li   t2, 0x0100
     bne  x11, t2, fail
-    li   t2, 0xFFFF
+    li   t2, 0xFFFFFFFFFF          # VEDA_PCC_UNBOUNDED
     bne  x12, t2, fail
 
     RVMODEL_HALT_PASS

@@ -105,15 +105,27 @@ landing_pad:
     # architecturally correct way, mirroring vc_pcc_bounds.S's own
     # already-established "return OCInvoke into an unbounded capability"
     # pattern -- not by weakening the enforcement.
-    # -- Object_ID=33 (return CODE): Base=return_pad, Length=0xFFFF
-    #    (VEDA_PCC_UNBOUNDED), Perms=Permit_Execute|Permit_Invoke=0x0402. --
-    la   t0, return_pad
-    slli t0, t0, 32
-    li   t1, 0xFFFF0402
-    or   t0, t0, t1
+    # -- Object_ID=33 (return CODE): Base=return_pad, Length=
+    #    VEDA_PCC_UNBOUNDED, Perms=Permit_Execute|Permit_Invoke=0x0402.
+    #    Phase 1 increment 3 update: VEDA_PCC_UNBOUNDED widened from
+    #    0xFFFF to 0xFFFFFFFFFF (Length is now 40 bits), so the old
+    #    compact single-GPR descriptor above can no longer express it
+    #    (its Length field is only 16 bits wide, and a literal 0xFFFF
+    #    there is now a real, genuine 65535-byte compartment rather than
+    #    the saturated sentinel -- which would leave RVMODEL_HALT_PASS's
+    #    own ordinary `sw` to tohost still blocked inside a live
+    #    compartment). The WIDE populate path is the only way to state
+    #    the sentinel: Length/Perms come from veda_attr (CSR 0x7C4, now
+    #    64-bit: Length[55:16] | Perms[15:0]) and Base comes straight
+    #    from a GPR at full width. Same object, same intent -- genuinely
+    #    unbounded return PCC -- expressed in the new format. --
+    li   t1, 0xFFFFFFFFFF        # VEDA_PCC_UNBOUNDED (40-bit all-ones Length)
+    slli t1, t1, 16
+    ori  t1, t1, 0x0402          # Permit_Execute|Permit_Invoke
+    csrw 0x7C4, t1               # veda_attr
+    la   t2, return_pad          # Base, full width, no packing/shifting
     li   x1, 33
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, t2  # veda.odt.populate.fast x5, x1, t2
 
     # -- Object_ID=34 (return DATA): Permit_Invoke only = 0x0400. --
     li   x1, 34

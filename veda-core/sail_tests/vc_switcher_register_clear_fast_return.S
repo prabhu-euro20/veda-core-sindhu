@@ -41,15 +41,22 @@ _start:
     .insn i 0x0b, 0x5, x8, x1, 0  # veda.bind c8, x1  -- sentry-1 source, unsealed
     .insn r 0x5b, 0x1, 0x15, x9, x8, x0  # csealentry c9, c8  -- MINT sentry-1
 
-    # -- sentry-2 SOURCE (Object_ID=41): Base=exit_landing, Length=0xFFFF
-    #    (VEDA_PCC_UNBOUNDED), Perms=Execute. --
-    la   t0, exit_landing
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    # -- sentry-2 SOURCE (Object_ID=41): Base=exit_landing,
+    #    Length=VEDA_PCC_UNBOUNDED, Perms=Execute. --
+    #    Length widened 16 -> 40 bits, so the unbounded sentinel is now
+    #    0xFFFFFFFFFF; a compact 0xFFFF is a real 65535-byte bound and
+    #    would leave PCC bounded (blocking the tohost store in
+    #    exit_landing). 0xFFFFFFFFFF does not fit the compact single-GPR
+    #    descriptor's 16-bit Length field, so this one object uses the
+    #    WIDE populate path (veda_attr + veda.odt.populate.fast); every
+    #    finite-Length object below keeps the compact form unchanged.
+    li   t1, 0xFFFFFFFFFF                # unbounded Length sentinel
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002                  # veda_attr = Length[55:16] | Perms[15:0]
+    csrw 0x7C4, t1                       # veda_attr
+    la   t2, exit_landing                # Base, full width, straight from a GPR
     li   x1, 41
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, t2  # veda.odt.populate.fast x5, x1, t2
 
     li   x1, 41
     .insn i 0x0b, 0x5, x10, x1, 0  # veda.bind c10, x1  -- sentry-2 source, unsealed

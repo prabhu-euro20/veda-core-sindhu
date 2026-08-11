@@ -89,7 +89,8 @@ real_handler:
     bne  t3, t4, fail
 
     csrr t3, 0x7c1                 # veda_pcc_length -- expect VEDA_PCC_UNBOUNDED
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF          # Length field widened 16 -> 40 bits, so the
+                                    # all-ones sentinel is now 0xFFFFFFFFFF
     bne  t3, t4, fail
 
     # Disable the timer source so it can't re-fire after mret (mtimecmp
@@ -106,7 +107,7 @@ real_handler:
     #    veda_mepcc_length still holds the compartment's saved bounds
     #    from the interrupt's own save-and-reset; clear it explicitly so
     #    mret's new auto-restore does not undo that choice. --
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF          # widened 40-bit all-ones sentinel (was 0xFFFF)
     csrw 0x7c3, t4                 # veda_mepcc_length := VEDA_PCC_UNBOUNDED
 
     # NOTE: unlike ecall's mepc (which points AT the trapping ecall

@@ -140,13 +140,21 @@ _start:
     .insn i 0x0b, 0x5, x8, x1, 0   # veda.bind c8, x1  -- thread_index, unsealed (permanent)
 
     # ══════════════ return-sentry SOURCE: Object_ID 130 ══════════════
-    la   t0, after_scheduler_return
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    # This object's Length must be the genuine unbounded sentinel, not a
+    # finite size: after_scheduler_return runs under THIS object's own PCC
+    # bounds, and it does ordinary (non-oc) loads/stores of thread_index and
+    # tsc_ok, which purecap only permits while veda_pcc_length ==
+    # VEDA_PCC_UNBOUNDED.  That sentinel widened 0xFFFF -> 0xFFFFFFFFFF, so
+    # it no longer fits the compact descriptor's 16-bit Length field; this
+    # one object therefore uses the WIDE populate path.  (Every other object
+    # here has a real finite Length and keeps the compact form.)
+    li   t1, 0xFFFFFFFFFF                 # Length = VEDA_PCC_UNBOUNDED
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002                   # Perms = Permit_Execute (unchanged)
+    csrw 0x7C4, t1                        # veda_attr = Length[55:16] | Perms[15:0]
+    la   t2, after_scheduler_return       # Base, full width, straight from a GPR
     li   x1, 130
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- return-sentry source
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x7   # veda.odt.populate.fast x5, x1, t2  -- return-sentry source
 
     li   x1, 130
     .insn i 0x0b, 0x5, x9, x1, 0   # veda.bind c9, x1  -- return-sentry source, unsealed (permanent)

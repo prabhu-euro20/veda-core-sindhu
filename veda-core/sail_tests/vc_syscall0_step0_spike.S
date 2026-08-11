@@ -144,7 +144,13 @@ h_escape:
     # -- the fetch past compartment_u's real 0x40-byte boundary trapped
     #    here, confirming the restored bounds were genuinely enforced,
     #    not merely CSR-readable. --
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF           # VEDA_PCC_UNBOUNDED -- the Length field is now 40 bits
+                                    # wide, so the "no compartment active" all-ones sentinel
+                                    # is 0xFFFFFFFFFF, not the old 16-bit 0xFFFF. Writing
+                                    # 0xFFFF here would leave a REAL 65535-byte bound that
+                                    # mret restores into PCC, and RVMODEL_HALT_PASS's own
+                                    # tohost store would then fault (trap loop) instead of
+                                    # halting.
     csrw 0x7c3, t3                  # explicit full unbind of the now-abandoned compartment's shadow
     li   x22, 0x900D                # final sentinel
     la   t3, done

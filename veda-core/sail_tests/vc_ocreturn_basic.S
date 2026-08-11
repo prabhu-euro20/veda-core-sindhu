@@ -17,17 +17,23 @@ _start:
     # own `mepc == return_landing` technique for distinguishing a real jump
     # from a coincidental fault).
 
-    # -- sentry SOURCE (Object_ID=90): Base=return_landing, Length=0xFFFF
-    #    (VEDA_PCC_UNBOUNDED), Perms=Execute only -- Permit_Invoke is not
-    #    needed, OCRETURN never checks it, by design. --
-    la   t0, return_landing
-    mv   x18, t0                # save the runtime Base for the later CSR-readback check
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    # -- sentry SOURCE (Object_ID=90): Base=return_landing,
+    #    Length=0xFFFFFFFFFF (VEDA_PCC_UNBOUNDED), Perms=Execute only --
+    #    Permit_Invoke is not needed, OCRETURN never checks it, by design. --
+    #    Increment 3 widened Length to 40 bits, so VEDA_PCC_UNBOUNDED is now
+    #    0xFFFFFFFFFF and no longer fits the compact single-GPR descriptor's
+    #    16-bit Length field (0xFFFF there is a real 65535-byte bound now, not
+    #    the sentinel). A genuinely unbounded sentry must therefore be built
+    #    via the WIDE populate path: veda_attr = Length[55:16] | Perms[15:0],
+    #    Base taken at full width straight from a GPR. --
+    la   t2, return_landing
+    mv   x18, t2                # save the runtime Base for the later CSR-readback check
+    li   t1, 0xFFFFFFFFFF       # VEDA_PCC_UNBOUNDED
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002         # Perms = Permit_Execute
+    csrw 0x7C4, t1              # veda_attr
     li   x1, 90
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x7  # veda.odt.populate.fast x5, x1, t2
 
     li   x1, 90
     .insn i 0x0b, 0x5, x8, x1, 0  # veda.bind c8, x1  -- sentry source, unsealed
@@ -76,7 +82,7 @@ return_landing:
     #    compartment boundary. --
     li   x20, 0x2222
     csrr t3, 0x7c1                        # veda_pcc_length
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF                 # VEDA_PCC_UNBOUNDED -- 40-bit Length since increment 3
     bne  t3, t4, fail
     csrr t3, 0x7c0                        # veda_pcc_base
     bne  t3, x18, fail

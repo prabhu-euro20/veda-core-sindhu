@@ -95,17 +95,30 @@ do_exit:
     #    STACK_FRAME_CALL_RETURN_ANALYSIS.md / rtl/MILESTONE_22_RESULTS.md:
     #    "the compartment's own eventual exit back to its invoker must
     #    use a second, real OCInvoke, never OCJALR") into a code
-    #    capability whose own Length is VEDA_PCC_UNBOUNDED (0xFFFF)
-    #    widens PCC back to unbounded, exactly like returning to an
-    #    ordinary, non-compartmentalized caller -- only then is an
-    #    ordinary sw (inside the halt macro) safe again.
-    la   t0, exit_point
-    slli t0, t0, 32
-    li   t1, 0xFFFF0402   # Length=0xFFFF (unbounded), Perms=0x0402 (Execute|Invoke)
-    or   t0, t0, t1
+    #    capability whose own Length is VEDA_PCC_UNBOUNDED
+    #    (0xFFFFFFFFFF) widens PCC back to unbounded, exactly like
+    #    returning to an ordinary, non-compartmentalized caller -- only
+    #    then is an ordinary sw (inside the halt macro) safe again.
+    #
+    # -- Built with the WIDE populate path, not the compact single-GPR
+    #    descriptor used everywhere else in this test. The capability
+    #    format widened (Length 16 -> 40 bits), so VEDA_PCC_UNBOUNDED is
+    #    now 0xFFFFFFFFFF and the old 0xFFFF is a genuine, finite
+    #    65535-byte compartment rather than the saturated sentinel --
+    #    exiting into it would leave PCC bounded and the halt macro's
+    #    ordinary sw would still trap. The compact descriptor's Length
+    #    field is only 16 bits and simply cannot express the sentinel, so
+    #    the unbounded exit object must come from veda_attr (CSR 0x7C4,
+    #    now Length[55:16] | Perms[15:0]) plus a full-width Base in a GPR.
+    #    The finite objects above (Length 0x0100 / 0x0040) are real bounds
+    #    and deliberately keep the compact form. --
+    li   t1, 0xFFFFFFFFFF   # Length=0xFFFFFFFFFF (VEDA_PCC_UNBOUNDED)
+    slli t1, t1, 16
+    ori  t1, t1, 0x0402     # Perms=0x0402 (Execute|Invoke)
+    csrw 0x7C4, t1
+    la   t2, exit_point     # Base, full width, straight from a GPR
     li   x1, 224
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2  -- exit CODE
+    .insn r 0x0b, 0x0, 0x04, x5, x1, t2  # veda.odt.populate.fast x5, x1, t2  -- exit CODE
 
     li   x1, 225
     li   x2, 0x8001090000400400

@@ -95,7 +95,10 @@ trap_handler:
     #    resume at a real, safe address outside it (not mepc+4, which is
     #    still just as far outside the compartment as the fault itself
     #    was). --
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF          # VEDA_PCC_UNBOUNDED -- all-ones in the
+                                   # now-40-bit Length field (was 0xFFFF when
+                                   # Length was 16 bits); 0xFFFF would now be a
+                                   # real 65535-byte bound, not the sentinel.
     csrw 0x7c1, t3                 # veda_pcc_length := VEDA_PCC_UNBOUNDED
     csrw 0x7c0, x0                 # veda_pcc_base := 0 (irrelevant once length is unbounded)
     # -- explicit override, added when auto-restore-on-mret shipped: this
@@ -112,7 +115,7 @@ trap_handler:
     mret
 
 recovery:
-    csrr x23, 0x7c1                # pcc_length AFTER the explicit restore -- expect 0xFFFF (proves the CSR write really landed)
+    csrr x23, 0x7c1                # pcc_length AFTER the explicit restore -- expect 0xFFFFFFFFFF (proves the CSR write really landed)
     li   x22, 0x900D               # sentinel: correctly resumed at the real recovery point, not inside the compartment
     j    done
 
@@ -124,7 +127,7 @@ done:
     bne  x21, t2, real_fail
     li   t2, 0x900D
     bne  x22, t2, real_fail
-    li   t2, 0xFFFF
+    li   t2, 0xFFFFFFFFFF          # VEDA_PCC_UNBOUNDED, 40-bit Length field
     bne  x23, t2, real_fail
 
     RVMODEL_HALT_PASS

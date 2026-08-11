@@ -65,7 +65,9 @@ real_handler:
     bne  t3, t4, fail
 
     csrr t3, 0x7c1                 # veda_pcc_length -- expect VEDA_PCC_UNBOUNDED
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF          # VEDA_PCC_UNBOUNDED -- Length is now 40 bits
+                                   # wide (was 16), so the all-ones sentinel
+                                   # widened from 0xFFFF to 0xFFFFFFFFFF
     bne  t3, t4, fail
 
     li   x21, 0x600D
@@ -79,7 +81,7 @@ real_handler:
     #    save-and-reset ran before this handler started), so without this
     #    explicit clear, mret would auto-restore back into the abandoned
     #    compartment, undoing this handler's own deliberate choice. --
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF          # widened sentinel, see the 0x7c1 check above
     csrw 0x7c3, t3                 # veda_mepcc_length := VEDA_PCC_UNBOUNDED
 
     csrr t3, mepc

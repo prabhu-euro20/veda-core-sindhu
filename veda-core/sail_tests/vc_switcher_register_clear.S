@@ -134,13 +134,22 @@ target_entry:
     #    capabilities) are no longer needed past this point and are
     #    reused here as scratch, mirroring this file's own existing
     #    economical-register-reuse convention. --
-    la   t0, return_pad
-    slli t0, t0, 32
-    li   t1, 0xFFFF0402        # Length=0xFFFF (VEDA_PCC_UNBOUNDED), Perms=0x0402 (Execute|Invoke)
-    or   t0, t0, t1
+    # VEDA_PCC_UNBOUNDED widened from 0xFFFF to 0xFFFFFFFFFF, so the old
+    # compact single-GPR descriptor can no longer express it -- its Length
+    # field is only 16 bits wide, and a Length of 0xFFFF there is now an
+    # ordinary, real 65535-byte bound rather than the saturated sentinel.
+    # This one object (and only this one -- every other object in this
+    # file has a real, finite Length that the compact form still states
+    # exactly) therefore moves to the WIDE populate path: Length|Perms via
+    # veda_attr (CSR 0x7C4, Length[55:16] | Perms[15:0]) and Base at full
+    # width straight from a GPR.
+    li   t1, 0xFFFFFFFFFF      # Length=0xFFFFFFFFFF (VEDA_PCC_UNBOUNDED)
+    slli t1, t1, 16
+    ori  t1, t1, 0x0402        # Perms=0x0402 (Execute|Invoke)
+    csrw 0x7C4, t1
+    la   x2, return_pad        # Base, full width, straight from a GPR
     li   x1, 40
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2  -- RETURN CODE
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x2  # veda.odt.populate.fast x5, x1, x2  -- RETURN CODE
 
     li   x1, 41
     li   x2, 0x8004090000400400

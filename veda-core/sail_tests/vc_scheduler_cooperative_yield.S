@@ -186,17 +186,27 @@ _start:
     .insn i 0x0b, 0x5, x8, x1, 0   # veda.bind c8, x1  -- thread_index, unsealed (permanent)
 
     # ══════════════ return-sentry SOURCE: Object_ID 130 (Base=after_scheduler_return,
-    #    Length=0xFFFF=VEDA_PCC_UNBOUNDED, Perms=Execute) -- the switcher trusts itself
+    #    Length=VEDA_PCC_UNBOUNDED, Perms=Execute) -- the switcher trusts itself
     #    completely, so its own return-continuation is unbounded, not narrowly scoped;
     #    avoids a repeat of the Length-sizing bug MINIMAL_OS_KERNEL_DESIGN.md's own
     #    Section 5 already documented once. ══════════════
-    la   t0, after_scheduler_return
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    # Phase 1 increment 3: VEDA_PCC_UNBOUNDED widened 0xFFFF -> 0xFFFFFFFFFF, so the
+    # old compact single-GPR descriptor can no longer express it (its Length field is
+    # only 16 bits, and 0xFFFF now means a genuine 65535-byte compartment). Empirically
+    # confirmed: with the old 0xFFFF the OCRETURN below landed in a BOUNDED PCC, and
+    # after_scheduler_return's own very first ordinary `lw thread_index` trapped as a
+    # purecap violation (the Milestone 19 rule this file's thread_index comment above
+    # already explains) -- the switcher must stay genuinely unbounded. Hence the WIDE
+    # populate path: Length/Perms via veda_attr (CSR 0x7C4, now Length[55:16]|Perms[15:0]),
+    # Base straight from a GPR at full width. Every other object here has a real, finite
+    # Length and keeps the compact form unchanged.
+    li   t1, 0xFFFFFFFFFF      # VEDA_PCC_UNBOUNDED (all ones in the 40-bit Length field)
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002        # Perms=Execute
+    csrw 0x7C4, t1             # veda_attr
+    la   x2, after_scheduler_return
     li   x1, 130
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- return-sentry source
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x2   # veda.odt.populate.fast x5, x1, x2  -- return-sentry source
 
     li   x1, 130
     .insn i 0x0b, 0x5, x9, x1, 0   # veda.bind c9, x1  -- return-sentry source, unsealed (permanent)
