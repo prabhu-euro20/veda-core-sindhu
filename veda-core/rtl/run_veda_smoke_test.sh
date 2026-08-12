@@ -317,14 +317,14 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_s0kneg.vvp" "$SIM/veda_core.sv" "$SIM/tb_
 echo "==> Simulating (RTL Part D: syscall0 kernel forged-Object_ID negative)"
 vvp "$SIM/sim_s0kneg.vvp" +elf_hex="$SIM/veda_smoke_syscall0_kernel_forged_neg.hex"
 
-echo "==> R2a: Compiling (32-byte tag granule -- plain store into byte 16 destroys a stored capability's tag)"
+echo "==> RTL-2a: Compiling (32-byte tag granule -- plain store into byte 16 destroys a stored capability's tag)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_granule_tamper.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap_granule_tamper.sv"
-echo "==> Simulating (R2a granule tamper)"
+echo "==> Simulating (RTL-2a granule tamper)"
 vvp "$SIM/sim_granule_tamper.vvp" +elf_hex="$SIM/veda_smoke_cap_granule_tamper.hex"
 
-echo "==> R2a: Compiling (32-byte alignment -- misaligned OCS.C hard-traps, cause 0x08)"
+echo "==> RTL-2a: Compiling (32-byte alignment -- misaligned OCS.C hard-traps, cause 0x08)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_misaligned.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap_misaligned_neg.sv"
-echo "==> Simulating (R2a misaligned)"
+echo "==> Simulating (RTL-2a misaligned)"
 vvp "$SIM/sim_misaligned.vvp" +elf_hex="$SIM/veda_smoke_cap_misaligned_neg.hex"
 
 echo "==> CAndPerm: Compiling (rights attenuation, positive)"
@@ -337,9 +337,9 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_candperm_neg.vvp" "$SIM/veda_core.sv" "$S
 echo "==> Simulating (CAndPerm negative)"
 vvp "$SIM/sim_candperm_neg.vvp" +elf_hex="$SIM/veda_smoke_candperm_neg.hex"
 
-echo "==> R2b: Compiling (256-bit capability -- every field exact across a memory round-trip)"
+echo "==> RTL-2b: Compiling (256-bit capability -- every field exact across a memory round-trip)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_cap256.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cap256_roundtrip.sv"
-echo "==> Simulating (R2b 256-bit round-trip)"
+echo "==> Simulating (RTL-2b 256-bit round-trip)"
 vvp "$SIM/sim_cap256.vvp" +elf_hex="$SIM/veda_smoke_cap256_roundtrip.hex"
 
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"

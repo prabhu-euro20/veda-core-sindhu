@@ -40,10 +40,10 @@ compiles clean.** That difference is the whole reason this increment exists sepa
 
 | Stage | Result |
 |---|---|
-| Baseline (before R2a) | 53/53 TEST PASSED |
-| R2a, first run | 52/53 -- exactly one failure, `m24_ocsc_tcm`, as the plan predicted |
-| R2a, after the expected test update | 53/53 |
-| Full suite incl. 2 new R2a tests + 2 CAndPerm tests | **57/57** |
+| Baseline (before RTL-2a) | 53/53 TEST PASSED |
+| RTL-2a, first run | 52/53 -- exactly one failure, `m24_ocsc_tcm`, as the plan predicted |
+| RTL-2a, after the expected test update | 53/53 |
+| Full suite incl. 2 new RTL-2a tests + 2 CAndPerm tests | **57/57** |
 
 **The one expected test update, stated plainly:** `veda_smoke_m24_ocsc_tcm.S` probes two
 never-written capability slots at offset `0x10` to prove they read back untagged. Under a 32-byte
@@ -77,7 +77,7 @@ this is a real ABI consequence every capability-placing program must follow, not
 - The capability is **still 128 bits** in this increment. The granule is now 32 bytes ahead of the
   format, which is safe (a 16-byte capability inside a 32-byte granule is merely coarser tag
   invalidation -- fail-safe), and it is what closes the window described above. The format widens
-  in R2b.
+  in RTL-2b.
 - The alignment requirement is live **now**, which is why `m24_ocsc_tcm` needed its offsets fixed;
   any future test placing a capability must use 32-byte-aligned offsets.
 - RTL only. No Sail change; no ACT4 numbers claimed (the 51/51 conformance suite is pure GPR

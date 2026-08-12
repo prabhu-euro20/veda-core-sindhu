@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// R2b: every field of a capability must survive the 256-bit memory round-trip
+// RTL-2b: every field of a capability must survive the 256-bit memory round-trip
 // exactly. A one-position error anywhere in the pack/unpack layout corrupts at
 // least one field, which zero-regression testing would not catch.
 module tb;

@@ -61,7 +61,7 @@ _start:
     .insn r 0x5b, 0x0, 0x00, x13, x2, x0 # cgetbase x13, c2  -- expect 0x80010000
 
     # ---- negative: TCM offset never written -- must read back untagged ----
-    # Offset 0x20, not 0x10: as of RTL increment R2a a capability is 32 bytes
+    # Offset 0x20, not 0x10: as of RTL increment RTL-2a a capability is 32 bytes
     # and OCL.C/OCS.C require 32-byte natural alignment, so 0x10 is no longer a
     # legal capability address (it hard-traps as misaligned) -- a real ABI
     # consequence, not a test fudge. 0x20 + 32 = 0x40 is still in bounds

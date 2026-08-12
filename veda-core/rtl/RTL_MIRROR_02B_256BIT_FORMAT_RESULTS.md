@@ -50,18 +50,18 @@ re-verification of the specific sites that would fail silently:
 
 ### Deliberate interim narrowings, marked
 
-The ODT entry is still the pre-respec layout (R3 widens it), so Bind still names a slot with 23
+The ODT entry is still the pre-respec layout (RTL-3 widens it), so Bind still names a slot with 23
 bits and the id_hi anti-alias tag is still 15 bits. In Verilog a deliberate narrowing and a
 forgotten widening are textually identical, so all four such sites carry an explicit
-`INTERIM BRIDGE R3:` marker. **`grep 'INTERIM BRIDGE'` must reach zero when R3 lands** -- that
+`INTERIM BRIDGE RTL-3:` marker. **`grep 'INTERIM BRIDGE'` must reach zero when RTL-3 lands** -- that
 grep is the substitute for the type error Verilog will not give us.
 
 ## Verification
 
 | Stage | Result |
 |---|---|
-| Before R2b (after R2a) | 57/57 |
-| R2b, full suite | **58/58** (57 + the new round-trip test) |
+| Before RTL-2b (after RTL-2a) | 57/57 |
+| RTL-2b, full suite | **58/58** (57 + the new round-trip test) |
 
 **Zero regression is necessary but not sufficient here, and it is worth being precise about why:**
 every existing capability test reads through CGet*, and those return the *same numeric values*
@@ -87,8 +87,8 @@ committing; no mutant code is committed.
 
 - The **ODT entry is unchanged** in this increment, so an object still cannot actually *have* a
   Base above 4 GiB or a Length above 64 KiB -- the capability can now express one, but the table
-  cannot supply one. That is exactly the state Sail was in after its increment 2, and R3 fixes it.
-- The four `INTERIM BRIDGE R3` sites are live narrowings, deliberately.
-- PCC/mepcc and `veda_attr` are still narrow (R3 scope), as are the ODT-side generation and
-  populate paths (R3/R4).
+  cannot supply one. That is exactly the state Sail was in after its increment 2, and RTL-3 fixes it.
+- The four `INTERIM BRIDGE RTL-3` sites are live narrowings, deliberately.
+- PCC/mepcc and `veda_attr` are still narrow (RTL-3 scope), as are the ODT-side generation and
+  populate paths (RTL-3/RTL-4).
 - RTL only; no ACT4 numbers claimed (the conformance suite is pure GPR datapath).

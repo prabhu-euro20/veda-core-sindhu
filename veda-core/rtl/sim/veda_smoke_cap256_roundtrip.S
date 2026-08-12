@@ -1,6 +1,6 @@
 .section .text
 .global _start
-# R2b: proves the 256-BIT pack/unpack is field-exact, which zero-regression
+# RTL-2b: proves the 256-BIT pack/unpack is field-exact, which zero-regression
 # alone cannot show (every existing test reads through CGet*, and those return
 # the same numeric values under wider zero-extends whether or not the new
 # layout is right). A capability is stored to memory and reloaded, and EVERY

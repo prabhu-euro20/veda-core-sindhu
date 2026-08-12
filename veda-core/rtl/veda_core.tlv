@@ -1185,13 +1185,13 @@
          //  the real 23-bit Object_ID field -- a real, stated scope
          //  boundary, not silent truncation.
          // ─────────────────────────────────────────────────────────
-         // INTERIM BRIDGE R3: the capability's Object_ID is 44 bits now, but the
+         // INTERIM BRIDGE RTL-3: the capability's Object_ID is 44 bits now, but the
          // ODT entry (and its id_hi anti-alias tag) is still the pre-respec
-         // 23-bit layout, so Bind still names a slot with 23 bits. R3 widens the
+         // 23-bit layout, so Bind still names a slot with 23 bits. RTL-3 widens the
          // ODT entry and this becomes [43:0]. Written as an explicit narrow slice
          // with this marker precisely because in Verilog a deliberate narrowing and
          // a forgotten widening look identical -- grep INTERIM BRIDGE must reach
-         // zero when R3 lands.
+         // zero when RTL-3 lands.
          $veda_object_id[22:0] = $rs1_data[22:0];
          // MILESTONE 24 Stage 2: judged on the FULL 23-bit Object_ID
          // above, NOT the truncated low-8-bit $veda_odt_idx below -- a
@@ -1226,7 +1226,7 @@
          // fix with no other change needed) instead of silently
          // returning a different object's metadata.
          $veda_odt_id_hi[14:0] = {odt_mem[$veda_odt_addr+12][6:0], odt_mem[$veda_odt_addr+11]};
-         // INTERIM BRIDGE R3: 15-bit id_hi anti-alias tag, pre-respec ODT layout.
+         // INTERIM BRIDGE RTL-3: 15-bit id_hi anti-alias tag, pre-respec ODT layout.
          $veda_odt_id_match    = ($veda_odt_id_hi == $veda_object_id[22:8]);
          $veda_odt_valid        = odt_mem[$veda_odt_addr+9][0] && $veda_odt_id_match;
          // Milestone 12: the owner-hart byte, read alongside every other
@@ -1729,7 +1729,7 @@
                              $csealentry_wr_en ? |cpu>>1$veda_rs1cap_reserved :
                                                                   $RETAIN;
 
-            // R2b: flags[19:0] -- the new opaque/reserved field of the
+            // RTL-2b: flags[19:0] -- the new opaque/reserved field of the
             // 256-bit format. Every producer mints zeros (nothing can set it
             // nonzero yet); OCL.C restores whatever was stored so the
             // memory round-trip matches Sail's struct pack/unpack exactly
@@ -1787,7 +1787,7 @@
          // alias) took over slot 100, since generation/valid alone
          // can't tell the two apart.
          $veda_check_odt_id_hi[14:0] = {odt_mem[$veda_check_odt_addr+12][6:0], odt_mem[$veda_check_odt_addr+11]};
-         // INTERIM BRIDGE R3: dereference-time id_hi check, same pre-respec layout.
+         // INTERIM BRIDGE RTL-3: dereference-time id_hi check, same pre-respec layout.
          // $veda_rs1cap_object_id is 44 bits now; only its low 23 reach the ODT.
          $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[22:8]);
          $veda_check_odt_valid      = odt_mem[$veda_check_odt_addr+9][0] && $veda_check_odt_id_match;
@@ -1833,7 +1833,7 @@
          //  store is touched.
          // ─────────────────────────────────────────────────────────
          $veda_oclc_bounds_ok = (($rs2_data + 64'd16) <= {24'b0, $veda_rs1cap_length});
-         // R2a: 32-byte natural alignment is architectural for capability
+         // RTL-2a: 32-byte natural alignment is architectural for capability
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.
          $veda_capmem_misaligned = $veda_real_addr[4:0] != 5'b0;
@@ -1848,7 +1848,7 @@
          // natural way to divide by 16, the granule size, since 16 is a
          // power of two -- the same technique already used in the Sail
          // model's own tag-store index computation, byte_off >> 5).
-         // RTL mirror increment R2a: the granule is 32 bytes, matching the
+         // RTL mirror increment RTL-2a: the granule is 32 bytes, matching the
          // 256-bit capability that is about to land. One capability MUST
          // occupy exactly one granule: with a 16-byte granule a plain store
          // into the second half of a stored capability -- the half holding
@@ -1908,12 +1908,12 @@
          $veda_ocsc_store_cap_perms[15:0]     = /vreg[$veda_rd_cap]$perms;
          $veda_ocsc_store_cap_otype[15:0]     = /vreg[$veda_rd_cap]$otype;
          $veda_ocsc_store_cap_reserved[23:0]  = /vreg[$veda_rd_cap]$reserved;
-         // R2b: flags is opaque/reserved -- minted zero by every producer,
+         // RTL-2b: flags is opaque/reserved -- minted zero by every producer,
          // carried through memory so the pack/unpack round-trip matches Sail
          // exactly rather than diverging the instant flags gains meaning.
          $veda_ocsc_store_cap_flags[19:0]     = /vreg[$veda_rd_cap]$flags;
          $veda_ocsc_store_tag                 = /vreg[$veda_rd_cap]$tag;
-         // R2b: the 256-bit memory image. Object_ID(44) Base(56) Length(40)
+         // RTL-2b: the 256-bit memory image. Object_ID(44) Base(56) Length(40)
          // Offset(40) Perms(16) otype(16) generation(24) flags(20) = 256
          // EXACTLY -- the old layout was 127 data bits + a 1'b0 pad, and
          // that pad no longer exists. Widths must sum to exactly 256: if any
@@ -1982,7 +1982,7 @@
          // Monotonic narrowing: the new window, starting at the current
          // position, must not extend past cs1's own remaining Length --
          // the same principle already applied for CSetBounds in Sail.
-         // R2b: compared in a uniform 64-bit domain. Offset/Length are 40 bits
+         // RTL-2b: compared in a uniform 64-bit domain. Offset/Length are 40 bits
          // now while rs2_data is 64, so mixing a {24'b0,40} term with a
          // {48'b0,16} term would silently size the expression to the widest
          // operand and compare misaligned magnitudes.
@@ -3197,7 +3197,7 @@
          // elfmem[] itself, matching the design's own genuinely-separate
          // -array precedent), a DRAM-tier one reads from elfmem[]
          // exactly as every prior milestone already did.
-         // R2b: a capability is 32 bytes now -- both arms read 32, not 16.
+         // RTL-2b: a capability is 32 bytes now -- both arms read 32, not 16.
          $veda_oclc_load_data[255:0] =
             $veda_capmem_tcm_hit ?
             {tcm_scratch[$veda_real_addr[31:0]+31], tcm_scratch[$veda_real_addr[31:0]+30],
@@ -3236,7 +3236,7 @@
          // order above (Object_ID @ Base @ Length @ Offset @ Perms @
          // otype @ Reserved @ 1'b0 padding) -- matching the Sail model's
          // veda_cap_unpack exactly.
-         // R2b: transcribed from DESIGN_01's layout table character by
+         // RTL-2b: transcribed from DESIGN_01's layout table character by
          // character, NOT re-derived from widths -- Perms [75:60] and otype
          // [59:44] are the two a width-driven review skips because their
          // widths did not change, yet their POSITIONS moved.
@@ -3691,7 +3691,7 @@
          // object that genuinely owns this slot (the two new checks
          // above).
          odt_mem[CPU_veda_odt_addr_a0+11] <= CPU_veda_object_id_a0[15:8];
-         // INTERIM BRIDGE R3: id_hi write, pre-respec 23-bit ODT layout.
+         // INTERIM BRIDGE RTL-3: id_hi write, pre-respec 23-bit ODT layout.
          odt_mem[CPU_veda_odt_addr_a0+12] <= {1'b0, CPU_veda_object_id_a0[22:16]};
          // RTL MILESTONE 16: commit the retirement bit computed above --
          // once generation would wrap, this slot can never legitimately
