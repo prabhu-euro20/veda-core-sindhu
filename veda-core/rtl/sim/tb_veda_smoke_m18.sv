@@ -28,12 +28,20 @@ module tb;
 
     $display("x21(veda_attr readback)=0x%0h x6(ocl old)=0x%0h x9(ocl boundary)=0x%0h",
               dut.CPU_Xreg_val_a0[21], dut.CPU_Xreg_val_a0[6], dut.CPU_Xreg_val_a0[9]);
-    $display("odt_mem[Object_ID=6]: base=0x%0h length=0x%0h perms=0x%0h valid=%0b",
-              {dut.odt_mem[32'h9000_0000+16*6+3], dut.odt_mem[32'h9000_0000+16*6+2],
-               dut.odt_mem[32'h9000_0000+16*6+1], dut.odt_mem[32'h9000_0000+16*6+0]},
-              {dut.odt_mem[32'h9000_0000+16*6+5], dut.odt_mem[32'h9000_0000+16*6+4]},
-              {dut.odt_mem[32'h9000_0000+16*6+7], dut.odt_mem[32'h9000_0000+16*6+6]},
-              dut.odt_mem[32'h9000_0000+16*6+9][0]);
+    // RTL-6: offsets corrected from the dead 16-byte layout (16*6, with
+    // Length at +4/+5, Perms at +6/+7, valid at +9) to the real 32-byte
+    // one. This block is diagnostic only -- it is NOT in the pass
+    // condition below -- so unlike tb_veda_smoke_m4_neg it was printing
+    // nonsense rather than asserting it. Corrected anyway: a $display that
+    // confidently prints the wrong bytes is how the next debugging session
+    // gets sent in the wrong direction. Entry 6 -> 6*32 = 192.
+    $display("odt_mem[Object_ID=6]: base=0x%0h length=0x%0h perms=0x%0h valid=%0b resident=%0b",
+              {dut.odt_mem[32'h9000_0000+32*6+3], dut.odt_mem[32'h9000_0000+32*6+2],
+               dut.odt_mem[32'h9000_0000+32*6+1], dut.odt_mem[32'h9000_0000+32*6+0]},
+              {dut.odt_mem[32'h9000_0000+32*6+8], dut.odt_mem[32'h9000_0000+32*6+7]},
+              {dut.odt_mem[32'h9000_0000+32*6+13], dut.odt_mem[32'h9000_0000+32*6+12]},
+              dut.odt_mem[32'h9000_0000+32*6+17][0],
+              dut.odt_mem[32'h9000_0000+32*6+25][0]);
 
     if (dut.CPU_Xreg_val_a0[21] == 64'h0040100c &&
         dut.CPU_Xreg_val_a0[6] == 64'h1234567890ABCDEF &&

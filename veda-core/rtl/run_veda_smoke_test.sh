@@ -385,6 +385,16 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r10_fault_neg.vvp" "$SIM/veda_core.sv" "$
 echo "==> Simulating (RTL-5 R10 crossing fault)"
 vvp "$SIM/sim_r10_fault_neg.vvp" +elf_hex="$SIM/veda_smoke_r10_crossing_fault_neg.hex"
 
+echo "==> RTL-6: Compiling (object residency gate, all three bind modes)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_residency.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_residency.sv"
+echo "==> Simulating (RTL-6 object residency gate)"
+vvp "$SIM/sim_residency.vvp" +elf_hex="$SIM/veda_smoke_residency.hex"
+
+echo "==> RTL-6: Compiling (residency cause ordering, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_residency_order_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_residency_order_neg.sv"
+echo "==> Simulating (RTL-6 residency cause ordering)"
+vvp "$SIM/sim_residency_order_neg.vvp" +elf_hex="$SIM/veda_smoke_residency_order_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"

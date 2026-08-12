@@ -33,14 +33,23 @@
    //  VEDA-CORE: Object Descriptor Table — memory-mapped, not a register
    //  array (VEDA_CORE_SPEC.md Section 5.1's own design intent, made
    //  concrete for the first time in real RTL — see MILESTONE_PLAN.md
-   //  item 1 for the full reasoning). 256 entries this milestone (real
-   //  silicon-area scoping, not Sail's own 8.4M-entry ID space), 16 bytes
-   //  each: Base(32) + Length(16) + Perms(16) + generation(8) + valid(8,
-   //  really 1 bit, byte-aligned for simple addressing) + owner_hart(8,
-   //  Milestone 12 addition, byte offset +10, one of the six previously-
-   //  spare bytes in this 16-byte window) = 88 bits used of 128
-   //  available, same byte-addressable-array convention already used
-   //  for elfmem/dmem below, not a new idiom.
+   //  item 1 for the full reasoning). Same byte-addressable-array
+   //  convention already used for elfmem/dmem below, not a new idiom.
+   //
+   //  RTL-6 CORRECTION. Everything this header used to say about the entry
+   //  layout was three increments stale and actively dangerous: it claimed
+   //  256 entries of 16 bytes, owner_hart at "+10", and "88 bits used of
+   //  128 available". The real values are 768 entries of 32 bytes with
+   //  owner_hart at +18, and the bytes it advertised as spare (+11..+13)
+   //  are Length[39:24] and Perms. A reader hunting for spare space
+   //  top-down would have written into every object's bounds and
+   //  permissions, silently. Deleted rather than patched, because the
+   //  authoritative layout belongs in ONE place and duplicating it here is
+   //  how it went stale in the first place.
+   //
+   //  The layout of record is the byte map at the Populate write
+   //  enumeration (search ODT_OFF_RESIDENT), with the sizing arithmetic at
+   //  ODT_ENTRY_BYTES and the entry count at ODT_ENTRIES below.
    // ───────────────────────────────────────────────────────────────────
    localparam bit [31:0] ODT_BASE = 32'h9000_0000;
    // RTL-4 (DESIGN_08, mirrors Sail 1fef6e3d): 256 -> 512. The table is now
@@ -91,9 +100,36 @@
    // fields need Base56+Length40+Perms16+gen24+valid1+owner8+retired1+
    // id_hi36 = 182 bits even bit-packed, well over the 128 a 16-byte entry
    // holds; dropping id_hi entirely still needs 146. Every field is
-   // byte-aligned (25 B used, 7 spare) so the three hand-written
+   // byte-aligned (26 B used, 6 spare after RTL-6) so the hand-written
    // enumerations of this layout stay mechanically diffable.
    localparam int ODT_ENTRY_BYTES = 32;
+   // ═══════════════════════════════════════════════════════════════════
+   //  RTL-6 (DESIGN_02 Phase 2, increment 1): the per-OBJECT residency
+   //  byte, mirroring Sail's odt_entry.resident (veda_types.sail:301).
+   //
+   //  WHY THIS ONE FIELD GETS A NAMED CONSTANT WHEN NO OTHER DOES, which
+   //  is a deliberate departure from the surrounding literal-offset style
+   //  and is recorded here rather than left to look like an accident.
+   //  The layout is hand-written in SIX places with no shared macro: the
+   //  five reset seeds below, the Bind-side read, the dereference-side
+   //  read, the Populate/Populate-Fast write, the Destroy write, and the
+   //  owner-claim write. (The comment at the write enumeration says
+   //  "three copies" -- it undercounts; that has been corrected there.)
+   //  A field added at +25 in five of six sites and +26 in the sixth
+   //  compiles clean, elaborates clean, simulates, and produces a
+   //  permanently non-resident or permanently resident object with no
+   //  diagnostic anywhere. That is precisely RTL-3's Mutation W hazard
+   //  class, and the existing mitigation for it -- ODT_ENTRY_BYTES
+   //  replacing the bare literal 32 in both stride computations -- is the
+   //  direct precedent for doing the same to a field offset.
+   //
+   //  The 1=resident polarity is also load-bearing, not cosmetic: odt_mem
+   //  is pre-zeroed at reset, so an omitted seed write reads 0. With
+   //  1=resident that omission traps every Bind in the corpus, which is
+   //  loud and unmissable. With 0=resident the identical omission would
+   //  make every never-written slot read resident and the gate a silent
+   //  no-op. Matches valid (+17) and retired (+19), whose set-state is 1.
+   localparam int ODT_OFF_RESIDENT = 25;
    // MILESTONE 24 (TCM_FAST_PATH_DESIGN.md): the first real DRAM-latency
    // number this core has ever modeled -- every prior milestone's own
    // cycle counts assumed odt_mem[]/elfmem[] access is always 1 cycle,
@@ -253,6 +289,12 @@
       // logic (below) is what's actually under test, not a fixture that
       // pre-empts it.
       odt_mem[ODT_BASE+32+18] = VEDA_OWNER_UNOWNED;
+      // RTL-6: resident=1. Every seeded object needs this EXPLICITLY --
+      // the pre-zero above leaves it 0, and 0 is non-resident, so an
+      // omission here traps every Bind of this fixture (23 .S files) with
+      // RESIDENCY_FAULT. Loud by design, per the polarity argument at the
+      // ODT_OFF_RESIDENT declaration.
+      odt_mem[ODT_BASE+32+ODT_OFF_RESIDENT] = 8'h01;
       // Milestone 2 addition: a second seeded object, deliberately
       // *without* Permit_NMC_Compute (Perms = 0x000C, Load+Store only),
       // so a real negative-control test can confirm NMC_ADD's own
@@ -267,6 +309,7 @@
       odt_mem[ODT_BASE+64+14] = 8'h00;
       odt_mem[ODT_BASE+64+17] = 8'h01;
       odt_mem[ODT_BASE+64+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+64+ODT_OFF_RESIDENT] = 8'h01;   // RTL-6
       // Milestone 12 addition: Object_ID=60 -> region 0, local 60 -> entry
       // 0+60 -> byte offset 60*32 = 1920 from ODT_BASE ("60*16=960" was the
       // third stale RTL-2 derivation; 1920 below was already right), a
@@ -292,6 +335,13 @@
       odt_mem[ODT_BASE+1920+14] = 8'h00;
       odt_mem[ODT_BASE+1920+17] = 8'h01;
       odt_mem[ODT_BASE+1920+18] = 8'h63;
+      // RTL-6: this fixture MUST stay resident. Its whole job is to prove
+      // Bind reports OWNER_VIOLATION (0x06) for a live object owned
+      // elsewhere. Seeded non-resident it would report RESIDENCY_FAULT
+      // (0x0A) instead -- the residency gate outranks the mode match --
+      // and m12/m12_neg would fail on a cause they never meant to test.
+      // Sail carries the identical note at veda_regs.sail's own seed.
+      odt_mem[ODT_BASE+1920+ODT_OFF_RESIDENT] = 8'h01;
       // ────────────────────────────────────────────────────────────────
       //  RTL-4 (DESIGN_08): two CROSS-REGION seeds, mirroring Sail's own
       //  two at veda_regs.sail:665-693 field-for-field.
@@ -319,6 +369,7 @@
       odt_mem[ODT_BASE+8224+14] = 8'h00;
       odt_mem[ODT_BASE+8224+17] = 8'h01;
       odt_mem[ODT_BASE+8224+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+8224+ODT_OFF_RESIDENT] = 8'h01;   // RTL-6
       odt_mem[ODT_BASE+8224+20] = 8'h00;  // Object_ID[15:8]
       odt_mem[ODT_BASE+8224+21] = 8'h00;  // Object_ID[23:16]
       odt_mem[ODT_BASE+8224+22] = 8'h01;  // Object_ID[31:24]  <- the region
@@ -338,11 +389,114 @@
       odt_mem[ODT_BASE+16608+14] = 8'h00;
       odt_mem[ODT_BASE+16608+17] = 8'h01;
       odt_mem[ODT_BASE+16608+18] = VEDA_OWNER_UNOWNED;
+      // RTL-6: resident=1, and that is the point. This object lives in a
+      // NON-RESIDENT REGION. Region residency and object residency are
+      // different questions with different causes (0x09 vs 0x0A), and the
+      // region one wins. Seeding this object non-resident would make the
+      // test pass for the wrong reason and stop proving the region gate
+      // fires at all -- tb_veda_smoke_region_fault_neg's expected mtval
+      // would silently move from 0x69 to 0x6A.
+      odt_mem[ODT_BASE+16608+ODT_OFF_RESIDENT] = 8'h01;
       odt_mem[ODT_BASE+16608+20] = 8'h00;  // Object_ID[15:8]
       odt_mem[ODT_BASE+16608+21] = 8'h00;  // Object_ID[23:16]
       odt_mem[ODT_BASE+16608+22] = 8'h02;  // Object_ID[31:24]  <- the region
       odt_mem[ODT_BASE+16608+23] = 8'h00;  // Object_ID[39:32]
       odt_mem[ODT_BASE+16608+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
+      // ────────────────────────────────────────────────────────────────
+      //  RTL-6 (DESIGN_02 Phase 2, increment 1): the RESIDENCY_FAULT
+      //  fixture -- Object_ID=104 -> region 0, local 104 -> entry 104 ->
+      //  byte offset 104*32 = 3328. VALID but NOT RESIDENT, in a RESIDENT
+      //  region, so the object gate (0x0A) is the only thing that can
+      //  fire on it.
+      //
+      //  WHY A SEED AND NOT A RUNTIME SEQUENCE, stated plainly because it
+      //  is a real limitation and not a convenience. Once page-out exists
+      //  (RTL-6c) a program CAN reach {valid, non-resident} at runtime --
+      //  but page-out also BUMPS generation, by design, so any capability
+      //  held across it fails the generation check (0x02) before residency
+      //  is ever consulted. That is the correct architecture and it is
+      //  exactly why the dereference-side residency term needs a fixture
+      //  the architecture itself cannot produce. Sail records the same
+      //  limitation against its own equivalent seed.
+      //
+      //  CONSEQUENCE, and it must not be forgotten: this object is NOT a
+      //  legitimate page-in input. Its non-residency was injected, not
+      //  produced by a page-out, so nothing was ever evicted and no
+      //  generation was ever spent. Paging it in would install a Base for
+      //  contents that were never written anywhere.
+      //
+      //  Object_ID=104 chosen from the free region-0 low bytes. Collision
+      //  in this design is by SLOT (rt_odt_base[region] + Object_ID[7:0]),
+      //  NOT by Object_ID, so the check that matters is the low byte:
+      //  the corpus occupies 88 distinct region-0 low bytes and 103..109
+      //  are unoccupied. Sail's own equivalent fixtures (600/611/614) were
+      //  deliberately NOT copied here -- their low bytes are 88/99/102,
+      //  all three taken by existing RTL tests. They would still have
+      //  worked, but only because the 36-bit id_hi tag makes a same-slot
+      //  different-Object_ID lookup read as not-found. Resting three
+      //  fixtures on that single check is not a dependency worth taking.
+      {odt_mem[ODT_BASE+3328+3], odt_mem[ODT_BASE+3328+2], odt_mem[ODT_BASE+3328+1], odt_mem[ODT_BASE+3328+0]} = 32'h8001_0300;
+      {odt_mem[ODT_BASE+3328+8], odt_mem[ODT_BASE+3328+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+3328+13], odt_mem[ODT_BASE+3328+12]} = 16'h000C;  // Load+Store
+      odt_mem[ODT_BASE+3328+14] = 8'h00;                    // generation 0
+      odt_mem[ODT_BASE+3328+17] = 8'h01;                    // valid   = 1
+      odt_mem[ODT_BASE+3328+18] = VEDA_OWNER_UNOWNED;
+      // resident deliberately LEFT AT THE PRE-ZERO 0. Written explicitly
+      // anyway: an omitted write and an intentional zero are the same
+      // bytes but not the same claim, and the next reader deserves to see
+      // which one this is.
+      odt_mem[ODT_BASE+3328+ODT_OFF_RESIDENT] = 8'h00;      // NOT resident
+      //  RTL-6 ORDERING FIXTURE A -- Object_ID=105 -> entry 105 -> byte
+      //  offset 3360. Valid, NOT resident, and owned by hart 0x63.
+      //
+      //  Its only job is to pin 0x0A ABOVE 0x06. Sail's residency gate
+      //  precedes the mode match that produces the owner verdict, so a
+      //  paged-out object owned by another hart must report RESIDENCY, not
+      //  WRONG_OWNER. Without this fixture the cause-arm could be placed
+      //  after $veda_bind_trap and nothing in the suite would notice --
+      //  every other residency fixture is unowned, so the two orderings
+      //  agree everywhere except here.
+      //
+      //  The distinction is not academic. WRONG_OWNER tells the handler to
+      //  give up; RESIDENCY tells it to page the object in and retry. An
+      //  object that is both is serviceable, and reporting the permanent
+      //  condition when a recoverable one is also true loses the recovery.
+      {odt_mem[ODT_BASE+3360+3], odt_mem[ODT_BASE+3360+2], odt_mem[ODT_BASE+3360+1], odt_mem[ODT_BASE+3360+0]} = 32'h8001_0400;
+      {odt_mem[ODT_BASE+3360+8], odt_mem[ODT_BASE+3360+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+3360+13], odt_mem[ODT_BASE+3360+12]} = 16'h000C;
+      odt_mem[ODT_BASE+3360+14] = 8'h00;
+      odt_mem[ODT_BASE+3360+17] = 8'h01;                    // valid
+      odt_mem[ODT_BASE+3360+18] = 8'h63;                    // owned by hart 99
+      odt_mem[ODT_BASE+3360+ODT_OFF_RESIDENT] = 8'h00;      // NOT resident
+      //  RTL-6 ORDERING FIXTURE B -- Object_ID = (2<<24)|8 = 33554440,
+      //  region 2, local 8 -> entry rt_odt_base[2] + 8 = 512+8 = 520 ->
+      //  byte offset 520*32 = 16640. Valid, NOT resident, in region 2,
+      //  which is itself NOT resident.
+      //
+      //  Its only job is to pin 0x09 ABOVE 0x0A -- both faults true at
+      //  once, and the REGION one must win. The existing region-fault
+      //  fixture cannot prove this: it is seeded resident, so 0x0A is
+      //  false for it and either ordering yields 0x09.
+      //
+      //  The reason region wins is not precedence-by-convention. If the
+      //  domain's table is paged out you have no business having read the
+      //  object's entry at all -- the residency byte the RTL would consult
+      //  is a byte it cannot trust. Reporting 0x0A here would answer a
+      //  question that was never legitimately asked, and would send the
+      //  handler to page in one object when what is missing is the entire
+      //  table that object is described by.
+      {odt_mem[ODT_BASE+16640+3], odt_mem[ODT_BASE+16640+2], odt_mem[ODT_BASE+16640+1], odt_mem[ODT_BASE+16640+0]} = 32'h8003_0100;
+      {odt_mem[ODT_BASE+16640+8], odt_mem[ODT_BASE+16640+7]} = 16'h0008;
+      {odt_mem[ODT_BASE+16640+13], odt_mem[ODT_BASE+16640+12]} = 16'h0004;
+      odt_mem[ODT_BASE+16640+14] = 8'h00;
+      odt_mem[ODT_BASE+16640+17] = 8'h01;                   // valid
+      odt_mem[ODT_BASE+16640+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+16640+20] = 8'h00;  // Object_ID[15:8]
+      odt_mem[ODT_BASE+16640+21] = 8'h00;  // Object_ID[23:16]
+      odt_mem[ODT_BASE+16640+22] = 8'h02;  // Object_ID[31:24]  <- the region
+      odt_mem[ODT_BASE+16640+23] = 8'h00;  // Object_ID[39:32]
+      odt_mem[ODT_BASE+16640+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
+      odt_mem[ODT_BASE+16640+ODT_OFF_RESIDENT] = 8'h00;     // NOT resident
    end
 
    // ═══════════════════════════════════════════════════════════════════
@@ -1552,11 +1706,28 @@
          // *permanent* ambiguity instead of a periodic one. The real fix
          // needs a second bit: once generation would wrap, PERMANENTLY
          // retire the slot (refuse any future ODT-Populate against it)
-         // instead of reusing 0xFF forever. Uses 1 bit of byte +13, real,
-         // allocated-but-unused space after Milestone 15's own use of
-         // +11/+12 ("88 bits used of 128 available" plus Milestone 15's
-         // 15 more still leaves 3 full spare bytes).
+         // instead of reusing 0xFF forever. (RTL-6 correction: the rest of
+         // this comment used to say retired "uses 1 bit of byte +13" after
+         // Milestone 15's use of "+11/+12". Every one of those offsets is
+         // wrong against the code directly below it and has been since
+         // RTL-3 -- retired is at +19, +13 is Perms[15:8], and id_hi is at
+         // +20..+24. The counter is 24 bits, not 8, and saturates at
+         // 0xFFFFFF. Corrected rather than deleted because a future reader
+         // hunting spare bytes by comment would have written into Length
+         // and Perms.)
          $veda_odt_retired     = odt_mem[$veda_odt_addr+19][0];
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6 (DESIGN_02 Phase 2, increment 1): per-OBJECT residency.
+         //  Mirrors Sail's odt_entry.resident (veda_types.sail:301).
+         //
+         //  NAME COLLISION WARNING, and it is a genuine one. This is NOT
+         //  $veda_region_resident (below) and NOT rt_resident[]. Those ask
+         //  "is this DOMAIN's table paged in" and produce cause 0x09. This
+         //  asks "is this OBJECT's storage paged in" and produces 0x0A.
+         //  Sail keeps the two deliberately distinct and says so at the
+         //  field declaration; the names here are as far apart as the
+         //  established $veda_odt_* / $veda_region_* prefixes allow.
+         $veda_odt_resident    = odt_mem[$veda_odt_addr+ODT_OFF_RESIDENT][0];
          // Milestone 12: plain Bind's own real, genuine hard-trap --
          // a LIVE object owned by a genuinely different hart, distinct
          // in kind from "object not found" (Milestone 13, below). Joins
@@ -1613,6 +1784,29 @@
          //  left to be discovered.
          $veda_region_fault = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
                               && !$veda_region_resident;
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6: the OBJECT residency gate, VEDA_CAUSE_RESIDENCY_FAULT
+         //  (0x0A). Mirrors veda_bind_insts.sail's `if e.valid &
+         //  not(e.resident) then veda_trap(rd, RESIDENCY_FAULT)`, placed
+         //  BEFORE the mode match so it hard-traps all three bind modes.
+         //
+         //  THE THREE-MODE OR copies $veda_region_fault above and
+         //  deliberately NOT the $is_veda_bind_plain gating used by
+         //  $veda_bind_owner_violation and $veda_bind_notfound_violation.
+         //  Same security argument, one level down: a paged-out OBJECT is
+         //  a recoverable, serviceable event. If Bind-NoTrap soft-failed
+         //  with a cleared Tag and Rebind merely cleared Tag, a live
+         //  object would be misreported as destroyed and the pager would
+         //  never run. Copying the wrong neighbour here is silent.
+         //
+         //  THE $veda_odt_valid CONJUNCT IS LOAD-BEARING and is what keeps
+         //  0x05 outranking 0x0A. A never-populated slot reads valid=0 AND
+         //  resident=0 (both from the pre-zero). Without this conjunct it
+         //  would report "paged out" for an object that never existed --
+         //  telling a pager to fetch something with no backing anywhere.
+         //  Sail spells the same conjunct explicitly for the same reason.
+         $veda_residency_fault = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
+                                 && $veda_odt_valid && !$veda_odt_resident;
 
          // ─────────────────────────────────────────────────────────
          //  RTL Milestone 8: Rebind reads its OWN destination register
@@ -1661,8 +1855,17 @@
          // lives in the trailing raw \SV always_ff behind BOGUS_USE, so it
          // is invisible to TLV-level dependency review; found by tracing the
          // consumer, not by reading this line.
+         // RTL-6 adds !$veda_residency_fault for the identical reason one
+         // level down. A paged-out object is still valid and still
+         // id_hi-matching and still unowned, so $veda_bind_claim_en is
+         // true for it. Without this term a residency-faulting Bind takes
+         // ownership of an object it was just refused. Worse than the
+         // region case: ownership is the thing page-in is specified to
+         // PRESERVE, so a stolen owner byte would survive the whole paging
+         // cycle and outlive the fault that created it.
          $veda_owner_claim_en    = ($veda_bind_claim_en || $veda_rebind_claim_en)
-                                    && !$veda_region_fault;
+                                    && !$veda_region_fault
+                                    && !$veda_residency_fault;
          // Only consumed by the trailing raw \SV always_ff block below,
          // the same real reason $veda_odtpd_new_gen/etc. already needed
          // this (invisible to SandPiper's own TLV-level dependency
@@ -1819,9 +2022,16 @@
             // a non-resident region would trap AND still write the full
             // /vreg entry -- architectural state mutated by an instruction
             // that did not complete.
+            // RTL-6: identical argument for the OBJECT residency fault.
+            // Note it cannot ride on $veda_bind_trap either, and here the
+            // consequence is sharper than the region case: the fields
+            // written would be read from a PAGED-OUT entry, so a
+            // Bind-NoTrap would mint a live capability caching a Base
+            // whose frame the pager is free to have given away.
             $bind_wr_en = (|cpu>>1$is_veda_bind_plain || |cpu>>1$is_veda_bind_notrap) &&
                           !|cpu>>1$veda_bind_trap &&
                           !|cpu>>1$veda_region_fault &&
+                          !|cpu>>1$veda_residency_fault &&
                           (|cpu>>1$veda_rd_cap == #vreg);
             // Rebind: a genuinely different write shape from every
             // other source in this mux -- on failure (sealed rd, or an
@@ -1843,8 +2053,17 @@
             // Tag-clear here would look entirely plausible and would be
             // wrong: it is the difference between "your object is gone" and
             // "your object's domain is paged out, retry after servicing".
+            // RTL-6: the object residency fault is the SECOND condition
+            // ever to make Rebind hard-trap, and it needs its own
+            // exclusion for the same reason -- the whole point of trapping
+            // rather than Tag-clearing is the difference between "your
+            // object is gone" and "your object is paged out, retry after
+            // servicing". A Tag-clear would tell the holder the first
+            // thing when the second is true, and the pager would never
+            // be invoked.
             $rebind_wr_en = |cpu>>1$is_veda_rebind &&
                             !|cpu>>1$veda_region_fault &&
+                            !|cpu>>1$veda_residency_fault &&
                             (|cpu>>1$veda_rd_cap == #vreg);
             $oca_wr_en  = |cpu>>1$is_veda_oca &&
                           (|cpu>>1$veda_rd_cap == #vreg);
@@ -3161,6 +3380,7 @@
                              $veda_bind_trap || $veda_pcc_violation ||
                              $veda_purecap_violation || $veda_csr_escape_violation ||
                              $veda_region_fault ||
+                             $veda_residency_fault ||
                              $is_ecall;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
@@ -3174,6 +3394,29 @@
             // the domain in and retry. Verified free before use: 0x09
             // appears nowhere among this file's existing cause literals.
             $veda_region_fault        ? 5'h09 :
+            // RTL-6: 0x0A sits immediately after 0x09 and immediately
+            // before $veda_bind_trap, and both halves of that placement
+            // are load-bearing.
+            //
+            // AFTER 0x09: region residency and object residency are
+            // different questions and the region one wins. If a domain's
+            // table is paged out you cannot have read the object's entry
+            // at all, so any residency answer for the object is
+            // meaningless -- the RTL would happily compute one anyway from
+            // a byte it had no right to trust.
+            //
+            // BEFORE $veda_bind_trap: this arm is what makes 0x0A outrank
+            // 0x06 (wrong owner), matching Sail, where the residency gate
+            // precedes the mode match that produces 0x05/0x06. It does NOT
+            // need to outrank 0x05, and must not -- $veda_residency_fault
+            // carries $veda_odt_valid, so the two are mutually exclusive
+            // by construction rather than by this ordering.
+            //
+            // Verified free before use, same discipline the 0x09 arm
+            // records: every cause literal in this file was enumerated
+            // (0x01,02,03,04,05,06,07,08,09,11,12,13,19,1f) and 0x0A
+            // appears in none of them.
+            $veda_residency_fault     ? 5'h0A :
             $veda_ocl_violation       ? $veda_ocl_cause :
             $veda_ocs_violation       ? $veda_ocs_cause :
             $veda_oclc_violation      ? $veda_oclc_cause :
@@ -3195,6 +3438,7 @@
          $veda_trap_cap_idx[3:0] = $veda_ocinvoke_violation ? $veda_ocinvoke_cap_idx :
                                     $veda_ocjalr_violation   ? $veda_ocjalr_cap_idx :
                                     $veda_region_fault       ? $veda_rd_cap :
+                                    $veda_residency_fault    ? $veda_rd_cap :
                                     $veda_bind_trap          ? $veda_rd_cap :
                                                                 $veda_ocl_ocs_rs1_cap;
 
@@ -4314,11 +4558,20 @@
       // (veda_regs.sail:536-539) -- without it an out-of-range base produces
       // a write the simulator drops with no architectural statement at all.
       if (act4_mode && (CPU_is_veda_odt_populate_a0 || CPU_is_veda_odt_populate_fast_a0) && !CPU_veda_odt_populate_violation_a0 && CPU_veda_odt_idx_ok_a0) begin
-         // RTL-3 layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
+         // Layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
          // +12..+13, generation +14..+16, valid +17, owner_hart +18, retired
-         // +19, id_hi +20..+24. This enumeration and the two read enumerations
-         // ~2400 lines apart are three hand-written copies of ONE layout with
-         // no shared macro -- byte alignment is what keeps them diffable.
+         // +19, id_hi +20..+24, resident +25 (RTL-6, ODT_OFF_RESIDENT).
+         //
+         // RTL-6 CORRECTION: this comment used to say "three hand-written
+         // copies". It undercounts, and the undercount is the hazard. There
+         // are SIX: (1) the five reset seeds, (2) the Bind-side read, (3)
+         // the dereference-side read (partial -- gen/id_hi/valid only), (4)
+         // this Populate/Populate-Fast write, (5) the Destroy write below,
+         // (6) the owner-claim write in its own always_ff further down.
+         // There is no shared macro and no struct. A field added to five of
+         // six compiles clean and produces wrong values with no diagnostic.
+         // RTL-6's `resident` is the first field to use a named offset
+         // constant instead of a literal, for exactly this reason.
          odt_mem[CPU_veda_odt_addr_a0+0] <= CPU_veda_odtpd_new_base_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+1] <= CPU_veda_odtpd_new_base_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+2] <= CPU_veda_odtpd_new_base_a0[23:16];
@@ -4337,11 +4590,19 @@
          odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];
          odt_mem[CPU_veda_odt_addr_a0+17] <= 8'h01;
+         // RTL-6: Populate and Populate-Fast BOTH establish residency.
+         // Minting an object is what makes its storage present -- there is
+         // no path that creates an object whose contents are elsewhere.
+         // Missing this line is loud, not silent: every populate-then-bind
+         // test in the corpus (43 of them) would trap 0x0A.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h01;
          // RTL MILESTONE 15: record the real full Object_ID's upper 15
-         // bits in the real, previously-unused bytes +11/+12, so a
-         // later low-byte-aliasing lookup can be told apart from the
-         // object that genuinely owns this slot (the two new checks
-         // above).
+         // bits in the real Object_ID bytes +20..+24 (this comment said
+         // "+11/+12" until RTL-6 -- stale since RTL-3, and +11/+12 are
+         // Length[39:24], so anyone trusting it would have corrupted every
+         // object's bounds), so a later low-byte-aliasing lookup can be
+         // told apart from the object that genuinely owns this slot (the
+         // two new checks above).
          odt_mem[CPU_veda_odt_addr_a0+20] <= CPU_veda_object_id_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+21] <= CPU_veda_object_id_a0[23:16];
          odt_mem[CPU_veda_odt_addr_a0+22] <= CPU_veda_object_id_a0[31:24];
@@ -4359,11 +4620,33 @@
          odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];
          odt_mem[CPU_veda_odt_addr_a0+17] <= 8'h00;
          odt_mem[CPU_veda_odt_addr_a0+19] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
+         // RTL-6: Destroy clears residency too. This write is invisible to
+         // the entire existing 64-test corpus -- Destroy also clears valid,
+         // and the Bind gate is `valid && !resident`, so a dead slot can
+         // never reach the residency check no matter what this byte holds.
+         // It is here anyway, and Sail carries it for the same reason: no
+         // path may ever read a stale resident=true off a destroyed slot.
+         // "Currently unreachable" is a statement about today's checkers,
+         // not about the field's meaning, and RTL-6c adds a second reader.
+         // Named as a deliberate belt-and-braces write rather than left to
+         // look like a line whose absence nobody noticed.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h00;
       end
    end
 
    // VEDA-CORE RTL MILESTONE 12: owner-hart claim/re-claim write-back --
-   // the real, first-time consumer of odt_mem[]'s own byte offset +10.
+   // the real, first-time consumer of odt_mem[]'s own byte offset +18
+   // (this said "+10" until RTL-6; stale since RTL-3's relayout).
+   //
+   // RTL-6 NOTE, because the absence of a line is not self-documenting.
+   // Sail's Bind rebuilds the whole entry and therefore needs an explicit
+   // `resident = e.resident` to carry residency across a claim. This block
+   // writes exactly ONE byte, so residency carries over by construction
+   // and NO corresponding line belongs here. Adding one would be the bug:
+   // writing 8'h01 would make any Bind mark any object resident, which is
+   // the precise defeat of the gate that Bind is supposed to be subject
+   // to. The failure mode for this field is a write that should not exist,
+   // not a missing one -- the inverse of every other site in this mirror.
    // Fires on every successful Bind/Bind-NoTrap/Rebind (gated by
    // CPU_veda_owner_claim_en_a0, already mutually exclusive from plain
    // Bind's own hard-trap path by construction -- see the TLV-side
