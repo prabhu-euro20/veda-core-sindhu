@@ -43,7 +43,50 @@
    //  for elfmem/dmem below, not a new idiom.
    // ───────────────────────────────────────────────────────────────────
    localparam bit [31:0] ODT_BASE = 32'h9000_0000;
-   localparam int ODT_ENTRIES = 256;
+   // RTL-4 (DESIGN_08, mirrors Sail 1fef6e3d): 256 -> 512. The table is now
+   // PARTITIONED into region windows of ODT_REGION_ENTRIES each, exactly as
+   // Sail partitions its own flat modeled array (veda_regs.sail:457-467:
+   // 8 x 2^20 = 2^23 "exactly, so existing region-0 objects keep their old
+   // indices and the whole prior corpus is unaffected").
+   //
+   // GROW, do not shrink -- a deliberate decision with real evidence behind
+   // it, not a convenience. Holding the total at 256 and shrinking the
+   // per-region window to 128 would narrow the index to local[6:0], which
+   // leaves bit [7] checked by NEITHER the index NOR the id_hi tag ([43:8]).
+   // The corpus really does contain the colliding pairs (2,130) (3,131)
+   // (5,133) (6,134) (72,200) (73,201) (82,210) -- a Bind of Object_ID 2
+   // would silently return Object_ID 130's descriptor. No test binds both
+   // members of any pair, so the entire suite would still report PASS: a
+   // live confused-deputy bug with ZERO test signal. odt_mem[] is a
+   // simulation byte array, not silicon; 8 KiB -> 16 KiB costs no area, no
+   // timing, and no memory map (elfmem ends 0x8007_FFFF, TCM scratch starts
+   // 0xA000_0000, so 0x9000_2000..0x9000_5FFF is unallocated).
+   //
+   // THREE windows (768), not two. A non-resident region provably never
+   // reaches the array, so on pure architectural grounds region 2 needs no
+   // storage -- but giving it a real window makes the REGION_FAULT test
+   // strictly sharper, which is why it gets one. With region 2's object
+   // genuinely seeded and valid (mirroring Sail, veda_regs.sail:685-693), a
+   // MISSING residency gate makes the bind SUCCEED, so the test fails
+   // unmistakably. Without the seed, a missing gate would still trap -- with
+   // cause 0x05, object-not-found -- and a test that only asserted "it
+   // trapped" would pass over the hole. The fixture is chosen so the failure
+   // mode is loud, not so the table is minimal.
+   localparam int ODT_ENTRIES = 768;
+   // Entries per region window. Kept at 256 so region 0's index stays
+   // local[7:0] == Object_ID[7:0] and its byte address is byte-for-byte what
+   // the pre-RTL-4 formula produced -- the whole regression argument. It also
+   // keeps the index bits [7:0] and the id_hi tag bits [43:8] exactly
+   // complementary and jointly total over all 44 bits (proof at the
+   // $veda_odt_id_hi comment below), so the tag question stays closed.
+   localparam int ODT_REGION_ENTRIES = 256;
+   // Region Table size -- mirrors Sail's VEDA_REGION_MODELED (veda_regs.sail
+   // :466). A region at or above this is OUT OF WINDOW: not modeled, and
+   // therefore not resident (veda_regs.sail:503). Only regions that are both
+   // resident and actually bound need ODT storage, and Sail seeds exactly
+   // two resident regions, so 8 RT entries over 2 ODT windows covers every
+   // reachable modeled state -- 8 windows would be dead storage.
+   localparam int RT_ENTRIES = 8;
    // RTL-3: 32 bytes. This is arithmetic, not preference -- the respec's
    // fields need Base56+Length40+Perms16+gen24+valid1+owner8+retired1+
    // id_hi36 = 182 bits even bit-packed, well over the 128 a 16-byte entry
@@ -113,7 +156,65 @@
    // VEDA_OWNER_UNOWNED (veda_types.sail) byte-for-byte, not re-chosen.
    localparam bit [7:0] VEDA_OWNER_UNOWNED = 8'hFF;
    logic [7:0] odt_mem [ODT_BASE : ODT_BASE + (ODT_ENTRIES * ODT_ENTRY_BYTES) - 1];
+   // ───────────────────────────────────────────────────────────────────
+   //  RTL-4: the Region Table (RT). DESIGN_08's outer level -- flat,
+   //  always-resident, one entry per modeled protection domain. Mirrors
+   //  Sail's `register veda_region_table : vector(8, region_entry)`
+   //  (veda_regs.sail:470) and the region_entry struct's field set
+   //  (veda_types.sail:318-322), as five parallel arrays because this file
+   //  has no struct idiom (odt_mem is a flat byte array for the same reason).
+   //
+   //  UNIT CONVENTION, and it is load-bearing: rt_odt_base is an ENTRY
+   //  INDEX, not a byte address. Sail computes `idx = unsigned(
+   //  veda_odt_base_of(region)) + lu` (veda_regs.sail:519) -- the base is
+   //  added to `local` in ENTRY units and the ODT_ENTRY_BYTES stride is
+   //  applied exactly ONCE, afterwards. Storing a byte address here instead
+   //  would shift every non-zero-base region by 32x. That produces no
+   //  compile error, no warning, and no failure on the entire region-0
+   //  corpus -- precisely the silent-truncation class that cost RTL-3 four
+   //  bugs, so the convention is stated here rather than inferred.
+   //
+   //  rt_backing and rt_generation are declared for field parity with the
+   //  Sail struct and are genuinely UNUSED this increment -- said out loud
+   //  rather than omitted, because veda_types.sail:313-317 and DESIGN_08
+   //  both record that a stale or corrupt region_odt_base has region-WIDE
+   //  blast radius (strictly larger than any single ODT entry's), which is
+   //  what those two fields exist to bound later.
+   logic        rt_valid      [0:RT_ENTRIES-1];
+   logic        rt_resident   [0:RT_ENTRIES-1];
+   logic [31:0] rt_odt_base   [0:RT_ENTRIES-1];  // ENTRY index, NOT bytes
+   logic [55:0] rt_backing    [0:RT_ENTRIES-1];  // unused this increment
+   logic [23:0] rt_generation [0:RT_ENTRIES-1];  // unused this increment
    initial begin
+      // RTL-4: seed the RT FIRST, before any object seed. Ordering is real,
+      // not cosmetic: a cross-region object seed resolves its byte offset
+      // through the RT, the identical reason Sail seeds its region table
+      // before its objects (veda_regs.sail:555-558).
+      for (int veda_r = 0; veda_r < RT_ENTRIES; veda_r = veda_r + 1) begin
+         rt_valid[veda_r]      = 1'b0;
+         rt_resident[veda_r]   = 1'b0;
+         rt_odt_base[veda_r]   = 32'b0;
+         rt_backing[veda_r]    = 56'b0;
+         rt_generation[veda_r] = 24'b0;
+      end
+      // Region 0 -- the running domain. Base = entry 0, so every
+      // pre-DESIGN_08 object (the entire 88-Object_ID corpus, all of which
+      // have Object_ID[43:24] == 0) keeps its exact prior slot.
+      rt_valid[0] = 1'b1;  rt_resident[0] = 1'b1;  rt_odt_base[0] = 32'd0;
+      // Region 1 -- a SECOND resident domain, base = entry 256. Exists to
+      // prove global uniqueness: {region=1,local=k} is a different object
+      // than {region=0,local=k}. Mirrors veda_regs.sail:567.
+      rt_valid[1] = 1'b1;  rt_resident[1] = 1'b1;  rt_odt_base[1] = 32'd256;
+      // Region 2 -- a NON-RESIDENT domain (its ODT is paged out). The
+      // fixture for the explicit REGION_FAULT. Mirrors veda_regs.sail:568,
+      // including giving it a REAL base: Sail's own odt_write resolves seed
+      // (B) through this entry, so the object genuinely exists and is valid
+      // even though its domain is not resident. That is the whole point --
+      // the gate must fire BEFORE and INSTEAD OF a lookup that would
+      // otherwise have succeeded.
+      rt_valid[2] = 1'b1;  rt_resident[2] = 1'b0;  rt_odt_base[2] = 32'd512;
+      // Regions 3..7 stay rt_valid = 0; regions >= RT_ENTRIES are out of
+      // window. Both are non-resident, so both REGION_FAULT.
       // Milestone 1 test scaffold, explicitly temporary -- mirrors Sail
       // Milestone V-A's own veda_test_seed_odt() field-for-field, same
       // real reason: no ODT-Populate instruction exists yet in RTL
@@ -121,7 +222,11 @@
       // sequencing already used and documented in MILESTONE_PLAN.md).
       for (int veda_i = 0; veda_i < (ODT_ENTRIES * ODT_ENTRY_BYTES); veda_i = veda_i + 1)
          odt_mem[ODT_BASE + veda_i] = 8'h00;
-      // Object_ID=1 -> byte offset 1*16=16 from ODT_BASE. Base=0x80010000
+      // Object_ID=1 -> region 0, local 1 -> entry (rt_odt_base[0]=0)+1 = 1
+      // -> byte offset 1*ODT_ENTRY_BYTES = 1*32 = 32 from ODT_BASE. (The
+      // "1*16" in this comment before RTL-4 was stale from RTL-2; the
+      // literal 32 below was already correct, the derivation was not.)
+      // Base=0x80010000
       // (inside the same ELF-loaded RAM region ACT4/elfmem uses),
       // Length=0x40, Perms=0x100C (Permit_Load|Permit_Store|
       // Permit_NMC_Compute -- the last bit isn't consumed by anything
@@ -144,14 +249,17 @@
       // permission gate actually fires -- the identical real reason and
       // identical field values already used for this exact purpose in
       // the Sail test scaffold (veda_regs.sail's own Object_ID=2 entry).
-      // Object_ID=2 -> byte offset 2*16=32 from ODT_BASE.
+      // Object_ID=2 -> region 0, local 2 -> entry 0+2 -> byte offset
+      // 2*32 = 64 from ODT_BASE (the "2*16=32" here was likewise stale).
       {odt_mem[ODT_BASE+64+3], odt_mem[ODT_BASE+64+2], odt_mem[ODT_BASE+64+1], odt_mem[ODT_BASE+64+0]} = 32'h8001_0100;
       {odt_mem[ODT_BASE+64+8], odt_mem[ODT_BASE+64+7]} = 16'h0040;
       {odt_mem[ODT_BASE+64+13], odt_mem[ODT_BASE+64+12]} = 16'h000C;
       odt_mem[ODT_BASE+64+14] = 8'h00;
       odt_mem[ODT_BASE+64+17] = 8'h01;
       odt_mem[ODT_BASE+64+18] = VEDA_OWNER_UNOWNED;
-      // Milestone 12 addition: Object_ID=60 -> byte offset 60*16=960, a
+      // Milestone 12 addition: Object_ID=60 -> region 0, local 60 -> entry
+      // 0+60 -> byte offset 60*32 = 1920 from ODT_BASE ("60*16=960" was the
+      // third stale RTL-2 derivation; 1920 below was already right), a
       // THIRD seeded object, pre-claimed by owner_hart=0x63 (99 decimal)
       // -- a stand-in "other hart," since this single-core RTL testbench
       // has no real second hart to own anything with (mirrors Sail's own
@@ -174,6 +282,57 @@
       odt_mem[ODT_BASE+1920+14] = 8'h00;
       odt_mem[ODT_BASE+1920+17] = 8'h01;
       odt_mem[ODT_BASE+1920+18] = 8'h63;
+      // ────────────────────────────────────────────────────────────────
+      //  RTL-4 (DESIGN_08): two CROSS-REGION seeds, mirroring Sail's own
+      //  two at veda_regs.sail:665-693 field-for-field.
+      //
+      //  (A) region=1, local=1 -> Object_ID = (1<<24)|1 = 16777217
+      //      = 0x0100_0001. Entry = rt_odt_base[1] + local[7:0] = 256+1
+      //      = 257 -> byte offset 257*32 = 8224. Deliberately given a
+      //      DIFFERENT Base (0x8002_0000) from region-0 local-1 (Object_ID
+      //      1, Base 0x8001_0000 above) so a test can prove GLOBAL
+      //      UNIQUENESS: {region=1,local=1} and {region=0,local=1} are
+      //      different objects, not two names for one.
+      //
+      //  CRITICAL, and unlike all three seeds above: this one MUST write
+      //  the id_hi bytes +20..+24 explicitly. The region-0 seeds have
+      //  id_hi = Object_ID[43:8] = 0 and get it free from the array
+      //  pre-zero; this one's id_hi is 0x0001_0000. Omit the write and the
+      //  stored tag (0) will not match the expected tag, so the seed reads
+      //  as OBJECT_NOT_FOUND -- valid, silent, and indistinguishable from
+      //  "regions do not work". Byte shape copied from the real populate
+      //  write path below: +20 <= id[15:8], +21 <= id[23:16],
+      //  +22 <= id[31:24], +23 <= id[39:32], +24 <= {4'b0, id[43:40]}.
+      {odt_mem[ODT_BASE+8224+3], odt_mem[ODT_BASE+8224+2], odt_mem[ODT_BASE+8224+1], odt_mem[ODT_BASE+8224+0]} = 32'h8002_0000;
+      {odt_mem[ODT_BASE+8224+8], odt_mem[ODT_BASE+8224+7]} = 16'h0008;
+      {odt_mem[ODT_BASE+8224+13], odt_mem[ODT_BASE+8224+12]} = 16'h0004;  // Permit_Load only, matching Sail
+      odt_mem[ODT_BASE+8224+14] = 8'h00;
+      odt_mem[ODT_BASE+8224+17] = 8'h01;
+      odt_mem[ODT_BASE+8224+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+8224+20] = 8'h00;  // Object_ID[15:8]
+      odt_mem[ODT_BASE+8224+21] = 8'h00;  // Object_ID[23:16]
+      odt_mem[ODT_BASE+8224+22] = 8'h01;  // Object_ID[31:24]  <- the region
+      odt_mem[ODT_BASE+8224+23] = 8'h00;  // Object_ID[39:32]
+      odt_mem[ODT_BASE+8224+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
+      //  (B) region=2, local=7 -> Object_ID = (2<<24)|7 = 33554439
+      //      = 0x0200_0007. Entry = rt_odt_base[2] + 7 = 512+7 = 519 ->
+      //      byte offset 519*32 = 16608. Region 2 is NON-RESIDENT, so this
+      //      entry is a valid object in a paged-out domain: any Object-Bind
+      //      of it must raise an explicit REGION_FAULT rather than resolve.
+      //      Seeding it VALID is what makes that test load-bearing -- with
+      //      a missing residency gate the bind would succeed outright, not
+      //      merely report a different cause.
+      {odt_mem[ODT_BASE+16608+3], odt_mem[ODT_BASE+16608+2], odt_mem[ODT_BASE+16608+1], odt_mem[ODT_BASE+16608+0]} = 32'h8003_0000;
+      {odt_mem[ODT_BASE+16608+8], odt_mem[ODT_BASE+16608+7]} = 16'h0008;
+      {odt_mem[ODT_BASE+16608+13], odt_mem[ODT_BASE+16608+12]} = 16'h0004;  // Permit_Load only, matching Sail
+      odt_mem[ODT_BASE+16608+14] = 8'h00;
+      odt_mem[ODT_BASE+16608+17] = 8'h01;
+      odt_mem[ODT_BASE+16608+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+16608+20] = 8'h00;  // Object_ID[15:8]
+      odt_mem[ODT_BASE+16608+21] = 8'h00;  // Object_ID[23:16]
+      odt_mem[ODT_BASE+16608+22] = 8'h02;  // Object_ID[31:24]  <- the region
+      odt_mem[ODT_BASE+16608+23] = 8'h00;  // Object_ID[39:32]
+      odt_mem[ODT_BASE+16608+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
    end
 
    // ═══════════════════════════════════════════════════════════════════
@@ -1201,9 +1360,90 @@
          // class of bug Milestone 15 (below) already found and fixed for
          // ODT lookups generally. This must not reintroduce a variant of
          // it for latency classification specifically.
-         $veda_odt_tcm_hit = ($veda_object_id < {17'b0, TCM_ODT_ENTRIES[5:0]});
-         $veda_odt_idx[7:0]    = $veda_object_id[7:0];
-         $veda_odt_addr[31:0]  = ODT_BASE + ({24'b0, $veda_odt_idx} * 32'd32);
+         // ─────────────────────────────────────────────────────────
+         //  RTL-4 (DESIGN_08): domain-segmented Object_ID. Mirrors Sail's
+         //  veda_odt_index / veda_odt_base_of (veda_regs.sail:487-522).
+         //  The 44-bit Object_ID is TWO fields: an outer protection domain
+         //  and an inner object name within it.
+         // ─────────────────────────────────────────────────────────
+         $veda_region[19:0] = $veda_object_id[43:24];
+         $veda_local[23:0]  = $veda_object_id[23:0];
+         // The CRBR fast path. If the object lives in the domain we are
+         // already executing in, its ODT base is ALREADY in the CRBR, so no
+         // Region-Table read is needed and an intra-domain bind stays at
+         // exactly ONE memory read -- no regression from the pre-DESIGN_08
+         // single flat table (DESIGN_08 Section 4).
+         $veda_intra_region = ($veda_region == $veda_current_region);
+         // MILESTONE 24 Stage 2, re-stated for RTL-4: the TCM-tier decision
+         // is judged on `local` AND intra-domain residency -- never on the
+         // truncated low-8-bit index, and no longer on the raw 44-bit
+         // Object_ID either. Judged on the raw ID, a region-1 object with a
+         // small local would fail the < 32 test purely because its region
+         // bits make the number large; judged on `local` alone, a region-1
+         // object with local < 32 would be wrongly called TCM-tier even
+         // though the TCM holds only the CURRENT domain's low entries.
+         // Provably a no-op on the whole existing corpus: every one of its
+         // 88 Object_IDs is region 0, region 0 is the current region, so
+         // $veda_intra_region is 1 and $veda_local equals the full
+         // Object_ID -- the expression is identical to its pre-RTL-4 form
+         // for every test that asserts a cycle count.
+         $veda_odt_tcm_hit = $veda_intra_region && ($veda_local < {18'b0, TCM_ODT_ENTRIES[5:0]});
+         // RT_ENTRIES is 8, so this comparison needs FIVE bits, not three:
+         // RT_ENTRIES[2:0] would be 3'b000 and every region would read as
+         // out-of-window. Widened deliberately to [7:0] so a future
+         // RT_ENTRIES up to 255 cannot silently re-create that bug -- the
+         // exact missed-width class that cost RTL-3 four silent bugs.
+         $veda_region_in_window = ($veda_region < {12'b0, RT_ENTRIES[7:0]});
+         // The observable that proves the fixed-shape one-read property.
+         // Nothing consumes it yet (the cross-region read's LATENCY is not
+         // charged this increment, see the DRAM stall comment above), but a
+         // testbench probes it to assert that an intra-domain bind reads the
+         // RT exactly 0 times and a cross-domain bind exactly 1 -- the
+         // difference between a single architectural register and a cache.
+         $veda_rt_read_en = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind ||
+                             $is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_destroy)
+                            && !$veda_intra_region;
+         // Resolve the region's ODT base -- CRBR if intra-domain, else the
+         // RT. rt_*[$veda_region[2:0]] truncates to 3 bits, which is safe
+         // ONLY because $veda_region_in_window already guarantees the region
+         // is below RT_ENTRIES=8; out-of-window regions take the 32'b0 arm
+         // and are rejected by the residency gate below, never indexed.
+         $veda_region_base[31:0] = $veda_intra_region ? $veda_current_odt_base :
+                                    ($veda_region_in_window ? rt_odt_base[$veda_region[2:0]] : 32'b0);
+         // ENTRY units. The base is added to local in ENTRIES, and the
+         // ODT_ENTRY_BYTES stride is applied exactly ONCE, below -- Sail's
+         // `idx = unsigned(veda_odt_base_of(region)) + lu` (veda_regs.sail
+         // :519). Multiplying the base by the stride here as well would
+         // shift every non-zero-base region by 32x, silently.
+         $veda_odt_entry_idx[31:0] = $veda_region_base + {24'b0, $veda_local[7:0]};
+         // Bound the RESOLVED index, mirroring Sail's `if idx <
+         // VEDA_ODT_MODELED_ENTRIES then Some(idx) else None()`
+         // (veda_regs.sail:520). Region 0 provably cannot trip this
+         // (base 0 + [0,256) < 768), so this is not a corpus concern -- it
+         // is the guard against a MIS-PROGRAMMED region base pointing
+         // outside the array, whose blast radius is region-wide.
+         $veda_odt_idx_ok = ($veda_odt_entry_idx < {16'b0, ODT_ENTRIES[15:0]});
+         $veda_odt_idx[7:0]    = $veda_local[7:0];
+         // Clamp to entry 0 when out of bounds so the physical array read
+         // stays in range and never returns X. $veda_odt_idx_ok, folded into
+         // $veda_odt_valid below, is what makes the result ARCHITECTURALLY
+         // not-found -- the clamp is only about not reading garbage.
+         //
+         // The stride now references ODT_ENTRY_BYTES instead of a bare
+         // 32'd32. That literal was Mutation W's whole hazard in RTL-3:
+         // bumping the localparam while the stride stayed at 16 took the
+         // suite from 58 passing to 14 with no compile diagnostic anywhere.
+         // Referencing the parameter removes the hazard rather than relying
+         // on a checklist to remember it.
+         $veda_odt_addr[31:0]  = ODT_BASE + (($veda_odt_idx_ok ? $veda_odt_entry_idx : 32'b0)
+                                             * {24'b0, ODT_ENTRY_BYTES[7:0]});
+         // $veda_odt_idx_ok is also consumed by the trailing raw \SV
+         // always_ff (Populate/Destroy), and $veda_rt_read_en is consumed
+         // only by a hierarchical testbench probe -- both invisible to
+         // SandPiper's TLV-level dependency tracking, same reason
+         // $veda_owner_claim_en already needs this below.
+         `BOGUS_USE($veda_odt_idx_ok)
+         `BOGUS_USE($veda_rt_read_en)
          $veda_odt_base[55:0]   = {odt_mem[$veda_odt_addr+6], odt_mem[$veda_odt_addr+5], odt_mem[$veda_odt_addr+4], odt_mem[$veda_odt_addr+3], odt_mem[$veda_odt_addr+2], odt_mem[$veda_odt_addr+1], odt_mem[$veda_odt_addr+0]};
          $veda_odt_length[39:0] = {odt_mem[$veda_odt_addr+11], odt_mem[$veda_odt_addr+10], odt_mem[$veda_odt_addr+9], odt_mem[$veda_odt_addr+8], odt_mem[$veda_odt_addr+7]};
          $veda_odt_perms[15:0]  = {odt_mem[$veda_odt_addr+13], odt_mem[$veda_odt_addr+12]};
@@ -1231,9 +1471,37 @@
          // direct-mapped table with a hi-tag, so it mirrors the PROPERTY (no two
          // Object_IDs may alias one slot) rather than Sail's MECHANISM, at the
          // true width, for 3 extra bytes in an entry with 7 spare.
+         //
+         // RTL-4: the tag stays at 36 bits, Object_ID[43:8], and that is a
+         // PROOF, not an omission. Two Object_IDs alias iff entry(A) ==
+         // entry(B), where entry(X) = region_base(region(X)) + local(X)[7:0].
+         // Every region_base is a multiple of ODT_REGION_ENTRIES = 256 and
+         // local[7:0] is in [0,256), so region_base is exactly the window
+         // number x 256 and local[7:0] is exactly the offset inside it.
+         // Therefore entry(A) == entry(B) iff they land in the same window
+         // AND agree on bits [7:0] -- which means two DIFFERENT Object_IDs
+         // that collide must differ somewhere in [43:8], which is precisely
+         // what the tag covers. Index bits and tag bits stay exactly
+         // complementary and jointly total over all 44 bits, as before.
+         //
+         // This also holds in the pathological case DESIGN_08 warns about:
+         // if two distinct regions were MIS-PROGRAMMED to the same
+         // region_odt_base, they would land in the same window -- but the
+         // region occupies [43:24], which is inside [43:8], so the tag still
+         // differs and the lookup reads not-found. The 36-bit tag is the
+         // ONLY backstop in the design against RT mis-programming, which is
+         // the reason to keep it at full width rather than narrowing it to
+         // the local-only [23:8]. The converse is a trap worth naming: it
+         // must NOT be narrowed to just the region field [43:24] either,
+         // because 32 and 288 share region 0 and that alone would silently
+         // break veda_smoke_m15_neg.S's deliberate alias detection.
          $veda_odt_id_hi[35:0] = {odt_mem[$veda_odt_addr+24], odt_mem[$veda_odt_addr+23], odt_mem[$veda_odt_addr+22], odt_mem[$veda_odt_addr+21], odt_mem[$veda_odt_addr+20]};
          $veda_odt_id_match    = ($veda_odt_id_hi == $veda_object_id[43:8]);
-         $veda_odt_valid        = odt_mem[$veda_odt_addr+17][0] && $veda_odt_id_match;
+         // $veda_odt_idx_ok mirrors Sail's None() arm (veda_regs.sail:520 ->
+         // odt_lookup:532 -> empty_odt_entry): an unresolvable index is
+         // architecturally not-found, and every existing downstream consumer
+         // (owner_ok, bind_trap, rebind_ok) inherits it with no other change.
+         $veda_odt_valid        = $veda_odt_idx_ok && odt_mem[$veda_odt_addr+17][0] && $veda_odt_id_match;
          // Milestone 12: the owner-hart byte, read alongside every other
          // ODT field above -- an object with no live owner yet
          // (VEDA_OWNER_UNOWNED), or one this same hart already owns, is
@@ -1287,6 +1555,36 @@
          $veda_bind_notfound_violation = $is_veda_bind_plain && !$veda_odt_valid;
          $veda_bind_trap = $veda_bind_owner_violation || $veda_bind_notfound_violation;
          $veda_bind_cause[4:0] = $veda_bind_owner_violation ? 5'h06 : 5'h05;
+         // ─────────────────────────────────────────────────────────
+         //  RTL-4 (DESIGN_08): the REGION RESIDENCY GATE and
+         //  VEDA_CAUSE_REGION_FAULT (0x09). Mirrors veda_bind_insts.sail
+         //  :86 and :139-150 -- placed textually BEFORE the ODT-lookup
+         //  consumers, matching Sail's gate preceding odt_lookup.
+         // ─────────────────────────────────────────────────────────
+         //  The current region is resident BY CONSTRUCTION -- you cannot be
+         //  executing in a domain whose table is not present
+         //  (veda_regs.sail:500). An out-of-window region is not modeled and
+         //  is therefore not resident (veda_regs.sail:503). Everything else
+         //  is resident iff its RT entry says so.
+         $veda_region_resident = $veda_intra_region ? 1'b1 :
+                                  ($veda_region_in_window && rt_valid[$veda_region[2:0]]
+                                                          && rt_resident[$veda_region[2:0]]);
+         //  THE THREE-MODE OR IS LOAD-BEARING, and it deliberately does NOT
+         //  copy the $is_veda_bind_plain gating used by the two violations
+         //  above. veda_bind_insts.sail:145-147 states in as many words that
+         //  this is a hard trap for ALL bind modes. The reason is a security
+         //  one, not a symmetry one: a paged-out region is a RECOVERABLE,
+         //  serviceable event -- the handler pages the domain's ODT in and
+         //  retries. If Bind-NoTrap merely soft-failed with a cleared Tag,
+         //  and Rebind merely cleared Tag, the pageable region would be
+         //  misreported as "object not found", the pager would never be
+         //  invoked, and a perfectly live object would look permanently
+         //  destroyed. This knowingly narrows this file's own longstanding
+         //  "Rebind never hard-traps for ANY reason" invariant -- the first
+         //  condition ever to do so -- which is recorded here rather than
+         //  left to be discovered.
+         $veda_region_fault = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
+                              && !$veda_region_resident;
 
          // ─────────────────────────────────────────────────────────
          //  RTL Milestone 8: Rebind reads its OWN destination register
@@ -1324,7 +1622,19 @@
          $veda_bind_claim_en     = ($is_veda_bind_plain || $is_veda_bind_notrap) &&
                                     $veda_odt_valid && $veda_owner_ok;
          $veda_rebind_claim_en   = $is_veda_rebind && $veda_rebind_ok;
-         $veda_owner_claim_en    = $veda_bind_claim_en || $veda_rebind_claim_en;
+         // RTL-4: gate the claim on the region fault too. This one is NOT
+         // defensive -- it is reachable. The gate fires on residency, before
+         // the lookup, so the resolved slot can legitimately hold a valid,
+         // id_hi-matching, unowned entry (region 2's seed is exactly that),
+         // which makes $veda_bind_claim_en true. Without this term a
+         // region-faulting Bind would still write MHARTID into the ODT's
+         // owner byte -- a trapping instruction silently taking ownership of
+         // an object in a domain it was just refused access to. The write
+         // lives in the trailing raw \SV always_ff behind BOGUS_USE, so it
+         // is invisible to TLV-level dependency review; found by tracing the
+         // consumer, not by reading this line.
+         $veda_owner_claim_en    = ($veda_bind_claim_en || $veda_rebind_claim_en)
+                                    && !$veda_region_fault;
          // Only consumed by the trailing raw \SV always_ff block below,
          // the same real reason $veda_odtpd_new_gen/etc. already needed
          // this (invisible to SandPiper's own TLV-level dependency
@@ -1474,8 +1784,16 @@
             // reason (RTL Milestone 10). Bind-NoTrap can never set
             // $veda_bind_trap (only plain Bind can), so its own two
             // soft-fail reasons below are unaffected by this exclusion.
+            // RTL-4: the region fault needs its OWN exclusion here, not a
+            // free ride on $veda_bind_trap. $veda_bind_trap is false by
+            // construction for Bind-NoTrap (both its terms are gated on
+            // $is_veda_bind_plain), so without this term a Bind-NoTrap into
+            // a non-resident region would trap AND still write the full
+            // /vreg entry -- architectural state mutated by an instruction
+            // that did not complete.
             $bind_wr_en = (|cpu>>1$is_veda_bind_plain || |cpu>>1$is_veda_bind_notrap) &&
                           !|cpu>>1$veda_bind_trap &&
+                          !|cpu>>1$veda_region_fault &&
                           (|cpu>>1$veda_rd_cap == #vreg);
             // Rebind: a genuinely different write shape from every
             // other source in this mux -- on failure (sealed rd, or an
@@ -1486,7 +1804,19 @@
             // Bind). Gated separately per-field below via
             // $veda_rebind_ok, not folded into a single unconditional
             // $rebind_wr_en write like every other source here.
+            // RTL-4: the sharpest Bind-vs-Rebind difference in this
+            // increment. Rebind is architecturally trap-free everywhere else
+            // -- every failure only clears Tag via $veda_rebind_ok below --
+            // and a region fault is the FIRST condition under which it must
+            // hard-trap and leave rd completely untouched, Tag not even
+            // cleared, because Sail's residency gate precedes the
+            // VEDA_REBIND match arm entirely (veda_bind_insts.sail:148-149
+            // opens the else at :150 and does not close until :261). A
+            // Tag-clear here would look entirely plausible and would be
+            // wrong: it is the difference between "your object is gone" and
+            // "your object's domain is paged out, retry after servicing".
             $rebind_wr_en = |cpu>>1$is_veda_rebind &&
+                            !|cpu>>1$veda_region_fault &&
                             (|cpu>>1$veda_rd_cap == #vreg);
             $oca_wr_en  = |cpu>>1$is_veda_oca &&
                           (|cpu>>1$veda_rd_cap == #vreg);
@@ -1794,8 +2124,39 @@
          // 3) -- not independently testable until a real ODT-Destroy
          // exists in RTL (a later milestone), same real caveat V-A/V-B
          // had in Sail.
-         $veda_check_odt_idx[7:0]   = $veda_rs1cap_object_id[7:0];
-         $veda_check_odt_addr[31:0] = ODT_BASE + ({24'b0, $veda_check_odt_idx} * 32'd32);
+         // ─────────────────────────────────────────────────────────
+         //  RTL-4: the dereference re-check must resolve through the SAME
+         //  region base as Bind did. Kept textually parallel to the Bind
+         //  path line-for-line so the two stay diffable -- this is now the
+         //  FOURTH hand-written copy of an ODT address computation in this
+         //  file, ~700 lines from the first, and the file already carries
+         //  three unshared copies of the entry layout.
+         //
+         //  Miss this and the failure is MISLEADING, not obvious: every
+         //  cross-region capability would resolve to a region-0 slot on its
+         //  first OCL/OCS/OCL.C/OCS.C/NMC/Atomic, read a mismatched tag, and
+         //  report $veda_gen_stale -- cause 0x02, from an entirely different
+         //  fault family. It is also invisible to the whole existing corpus,
+         //  which is region 0 throughout, which is exactly why the new
+         //  uniqueness test DEREFERENCES its region-1 capability instead of
+         //  merely binding it.
+         //
+         //  NO residency gate and NO REGION_FAULT here, deliberately. Sail's
+         //  veda_check_access calls odt_lookup directly with no residency
+         //  term (veda_ocl_insts.sail:65-71, :238), so the RTL mirrors that
+         //  asymmetry exactly: residency is a BIND-time authority question,
+         //  not a per-dereference one.
+         $veda_check_region[19:0] = $veda_rs1cap_object_id[43:24];
+         $veda_check_local[23:0]  = $veda_rs1cap_object_id[23:0];
+         $veda_check_intra_region = ($veda_check_region == $veda_current_region);
+         $veda_check_region_in_window = ($veda_check_region < {12'b0, RT_ENTRIES[7:0]});
+         $veda_check_region_base[31:0] = $veda_check_intra_region ? $veda_current_odt_base :
+                                          ($veda_check_region_in_window ? rt_odt_base[$veda_check_region[2:0]] : 32'b0);
+         $veda_check_entry_idx[31:0] = $veda_check_region_base + {24'b0, $veda_check_local[7:0]};
+         $veda_check_idx_ok = ($veda_check_entry_idx < {16'b0, ODT_ENTRIES[15:0]});
+         $veda_check_odt_idx[7:0]   = $veda_check_local[7:0];
+         $veda_check_odt_addr[31:0] = ODT_BASE + (($veda_check_idx_ok ? $veda_check_entry_idx : 32'b0)
+                                                  * {24'b0, ODT_ENTRY_BYTES[7:0]});
          $veda_check_odt_gen[23:0]  = {odt_mem[$veda_check_odt_addr+16], odt_mem[$veda_check_odt_addr+15], odt_mem[$veda_check_odt_addr+14]};
          // RTL MILESTONE 15 (same fix as the Bind-side lookup above):
          // the dereference-time re-check must also confirm the slot
@@ -1806,7 +2167,7 @@
          // can't tell the two apart.
          $veda_check_odt_id_hi[35:0] = {odt_mem[$veda_check_odt_addr+24], odt_mem[$veda_check_odt_addr+23], odt_mem[$veda_check_odt_addr+22], odt_mem[$veda_check_odt_addr+21], odt_mem[$veda_check_odt_addr+20]};
          $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[43:8]);
-         $veda_check_odt_valid      = odt_mem[$veda_check_odt_addr+17][0] && $veda_check_odt_id_match;
+         $veda_check_odt_valid      = $veda_check_idx_ok && odt_mem[$veda_check_odt_addr+17][0] && $veda_check_odt_id_match;
          $veda_gen_stale = (!$veda_check_odt_valid) || ($veda_check_odt_gen != $veda_rs1cap_reserved);
 
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
@@ -2657,8 +3018,20 @@
                              $veda_ocjalr_violation || $veda_ocreturn_violation ||
                              $veda_bind_trap || $veda_pcc_violation ||
                              $veda_purecap_violation || $veda_csr_escape_violation ||
+                             $veda_region_fault ||
                              $is_ecall;
          $veda_trap_cause[4:0] =
+            // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
+            // ordering is mandatory rather than stylistic. A non-resident
+            // region also produces !$veda_odt_valid, so for a plain Bind
+            // $veda_bind_notfound_violation fires in the SAME cycle; putting
+            // 0x09 second would report 0x05 "the object never existed" for a
+            // domain that is merely paged out -- destroying exactly the
+            // distinction veda_bind_insts.sail:78-85 introduced 0x09 to
+            // make, and telling the handler to give up where it should page
+            // the domain in and retry. Verified free before use: 0x09
+            // appears nowhere among this file's existing cause literals.
+            $veda_region_fault        ? 5'h09 :
             $veda_ocl_violation       ? $veda_ocl_cause :
             $veda_ocs_violation       ? $veda_ocs_cause :
             $veda_oclc_violation      ? $veda_oclc_cause :
@@ -2671,8 +3044,15 @@
             $veda_ocreturn_violation  ? $veda_ocreturn_cause :
             $veda_bind_trap           ? $veda_bind_cause :
                                         5'b0;
+         // RTL-4: the region fault needs its own arm. The existing bind arm
+         // is gated on $veda_bind_trap, which is plain-Bind-only, so a fault
+         // from Bind-NoTrap or Rebind would fall through to the default
+         // $veda_ocl_ocs_rs1_cap = $instr[18:15] -- on a Bind encoding that
+         // is a slice of the GPR rs1 field, meaningless in mtval[8:5]. Sail
+         // reports rd for all three bind traps (veda_bind_insts.sail:149).
          $veda_trap_cap_idx[3:0] = $veda_ocinvoke_violation ? $veda_ocinvoke_cap_idx :
                                     $veda_ocjalr_violation   ? $veda_ocjalr_cap_idx :
+                                    $veda_region_fault       ? $veda_rd_cap :
                                     $veda_bind_trap          ? $veda_rd_cap :
                                                                 $veda_ocl_ocs_rs1_cap;
 
@@ -2898,6 +3278,42 @@
                                  (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$csr_write_en && >>1$csr_is_veda_pcc_base) ? >>1$csr_wdata[55:0] :
                                                                                    >>1$veda_pcc_base;
+         // ─────────────────────────────────────────────────────────
+         //  RTL-4: the Current-Region Base Register (CRBR), DESIGN_08
+         //  Section 4. Mirrors Sail's veda_current_region /
+         //  veda_current_odt_base (veda_regs.sail:481-482). It is NOT a
+         //  cache and NOT a TLB: one base, no tags, no fill-on-miss, no
+         //  eviction, no access history.
+         //
+         //  DELIBERATELY RESET-ONLY THIS INCREMENT -- no OCInvoke arm, no
+         //  OCReturn arm, no CSR. This is a refusal, not an omission, and
+         //  the reason is a security one. DESIGN_08 Section 4 says the CRBR
+         //  is "set explicitly at domain entry" and stops there; Sail writes
+         //  these two registers in exactly ONE place, its reset seed
+         //  (veda_regs.sail:569-570), and has no OCInvoke arm at all. Wiring
+         //  a load at OCInvoke here would therefore be new, formally
+         //  unverified behaviour -- and worse, it would OPEN A HOLE, because
+         //  OCReturn cannot currently undo it: OCReturn's only operand is a
+         //  sentry capability and no saved-caller-region state exists. The
+         //  current region is fault-EXEMPT by construction (the arm above,
+         //  mirroring veda_regs.sail:500), so a caller returning from a
+         //  callee would keep running with the CALLEE's region as "current"
+         //  -- inheriting unchecked, RT-free access to the callee's entire
+         //  object namespace. That is a compartment escape, not a
+         //  performance bug. The full analysis and the fix are written up as
+         //  finding R10 in RTL_MIRROR_04_DESIGN08_REGION_RESULTS.md; the fix
+         //  belongs in Sail first, as every prior increment has.
+         //
+         //  Coverage is not reduced by holding it here: with the CRBR pinned
+         //  at region 0 / base 0, region-0 binds exercise the fast path,
+         //  region-1 binds exercise the RT read path, and region-2 binds
+         //  exercise REGION_FAULT. The mux SHAPE below is written out so the
+         //  future arms have an obvious, single place to land.
+         //
+         //  Units: ENTRY index, matching rt_odt_base and Sail's
+         //  veda_odt_base_of, NOT bytes.
+         $veda_current_region[19:0]    = $reset ? 20'b0 : >>1$veda_current_region;
+         $veda_current_odt_base[31:0]  = $reset ? 32'b0 : >>1$veda_current_odt_base;
          $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                    (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :
                                    (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_length :
@@ -3690,7 +4106,16 @@
    // Veda-Core instruction test in this project already runs under
    // +elf_hex/act4_mode anyway.
    always_ff @(posedge clk) begin
-      if (act4_mode && (CPU_is_veda_odt_populate_a0 || CPU_is_veda_odt_populate_fast_a0) && !CPU_veda_odt_populate_violation_a0) begin
+      // RTL-4: CPU_veda_odt_addr_a0 already carries the region base, so this
+      // enumeration inherits region addressing with no edit -- which is
+      // exactly WHY the change was made in the shared address rather than in
+      // a Bind-only copy: a Populate on the old formula and a Bind on the
+      // new one would write one slot and read another. Mirrors Sail, whose
+      // odt_write also resolves through veda_odt_index. The added
+      // idx_ok term mirrors Sail's None() arm being a silent no-op
+      // (veda_regs.sail:536-539) -- without it an out-of-range base produces
+      // a write the simulator drops with no architectural statement at all.
+      if (act4_mode && (CPU_is_veda_odt_populate_a0 || CPU_is_veda_odt_populate_fast_a0) && !CPU_veda_odt_populate_violation_a0 && CPU_veda_odt_idx_ok_a0) begin
          // RTL-3 layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
          // +12..+13, generation +14..+16, valid +17, owner_hart +18, retired
          // +19, id_hi +20..+24. This enumeration and the two read enumerations
@@ -3730,7 +4155,7 @@
          // -Populate itself is permanently refused for it from here on
          // ($veda_odt_populate_violation, above).
          odt_mem[CPU_veda_odt_addr_a0+19] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
-      end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0) begin
+      end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0 && CPU_veda_odt_idx_ok_a0) begin
          odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_odtpd_new_gen_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];

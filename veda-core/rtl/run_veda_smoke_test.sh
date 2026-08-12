@@ -342,6 +342,26 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_cap256.vvp" "$SIM/veda_core.sv" "$SIM/tb_
 echo "==> Simulating (RTL-2b 256-bit round-trip)"
 vvp "$SIM/sim_cap256.vvp" +elf_hex="$SIM/veda_smoke_cap256_roundtrip.hex"
 
+echo "==> RTL-4 DESIGN_08: Compiling (global uniqueness across regions + dereference re-check)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_region_unique.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_region_unique.sv"
+echo "==> Simulating (RTL-4 region uniqueness)"
+vvp "$SIM/sim_region_unique.vvp" +elf_hex="$SIM/veda_smoke_region_unique.hex"
+
+echo "==> RTL-4 DESIGN_08: Compiling (CRBR fast path -- fixed-shape read count)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_region_fastpath.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_region_fastpath.sv"
+echo "==> Simulating (RTL-4 CRBR fast path)"
+vvp "$SIM/sim_region_fastpath.vvp" +elf_hex="$SIM/veda_smoke_region_fastpath.hex"
+
+echo "==> RTL-4 DESIGN_08: Compiling (explicit REGION_FAULT, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_region_fault_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_region_fault_neg.sv"
+echo "==> Simulating (RTL-4 region fault)"
+vvp "$SIM/sim_region_fault_neg.vvp" +elf_hex="$SIM/veda_smoke_region_fault_neg.hex"
+
+echo "==> RTL-4 DESIGN_08: Compiling (REGION_FAULT covers all bind modes, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_region_fault_modes_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_region_fault_modes_neg.sv"
+echo "==> Simulating (RTL-4 region fault, all bind modes)"
+vvp "$SIM/sim_region_fault_modes_neg.vvp" +elf_hex="$SIM/veda_smoke_region_fault_modes_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"
