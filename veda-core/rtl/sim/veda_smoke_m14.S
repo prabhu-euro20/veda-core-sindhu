@@ -12,7 +12,8 @@ _start:
     # widens it back. Fetch-time enforcement of these bounds (the actual
     # trap) is proven separately in veda_smoke_m14_neg.S.
     # ─────────────────────────────────────────────────────────────
-    csrr x9, 0x7c1                # pcc_length BEFORE any OCInvoke -- expect 0xFFFF
+    csrr x9, 0x7c1                # pcc_length BEFORE any OCInvoke -- expect 0xFFFFFFFFFF
+                                  # (RTL-3: Length is 40 bits, so the unbounded sentinel widened)
 
     # -- Object_ID=50 (CODE): Permit_Execute|Permit_Invoke=0x0402,
     #    Base=landing_pad, Length=0x0100. --
@@ -50,16 +51,22 @@ landing_pad:
     csrr x10, 0x7c0                # pcc_base AFTER OCInvoke -- expect landing_pad's own runtime address
     csrr x11, 0x7c1                # pcc_length AFTER OCInvoke -- expect 0x0100
 
-    # -- Object_ID=53 (return CODE): Base=return_pad, Length=0xFFFF
+    # -- Object_ID=53 (return CODE): Base=return_pad, Length=0xFFFFFFFFFF
     #    (unbounded -- a real "return to the unconstrained caller
-    #    context" capability). --
-    la   t0, return_pad
-    slli t0, t0, 32
-    li   t1, 0xFFFF0402
-    or   t0, t0, t1
+    #    context" capability). RTL-3: Length is 40 bits wide now, so the
+    #    unbounded sentinel is 0xFFFFFFFFFF and a bare 0xFFFF would be a
+    #    real 65535-byte bound instead. The compact packed populate can
+    #    only express a 16-bit Length, so this object must be built with
+    #    the WIDE form: veda.odt.populate.fast takes Base at full width
+    #    straight from rs2 and Length/Perms from veda_attr
+    #    (Length[55:16] | Perms[15:0]). --
+    li   t1, 0xFFFFFFFFFF          # unbounded Length sentinel
+    slli t1, t1, 16
+    ori  t1, t1, 0x0402            # Perms = Permit_Execute|Permit_Invoke
+    csrw 0x7c4, t1                 # veda_attr
+    la   x2, return_pad            # Base -- full width, no packing
     li   x1, 53
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x2  # veda.odt.populate.fast x5, x1, x2
 
     li   x1, 54
     li   x2, 0x8001090000400400
@@ -76,7 +83,7 @@ landing_pad:
     .insn r 0x5b, 0x1, 0x12, x0, x7, x8  # ocinvoke c7, c8   -- widens PCC back to unbounded
 
 return_pad:
-    csrr x12, 0x7c1                # pcc_length AFTER the return OCInvoke -- expect 0xFFFF again
+    csrr x12, 0x7c1                # pcc_length AFTER the return OCInvoke -- expect 0xFFFFFFFFFF again
 
 1:
     j 1b

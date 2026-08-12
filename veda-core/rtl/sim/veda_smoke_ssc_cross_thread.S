@@ -141,13 +141,22 @@ _start:
     .insn i 0x0b, 0x5, x8, x1, 0   # veda.bind c8, x1  -- thread_index, unsealed (permanent)
 
     # ══════════════ return-sentry SOURCE: Object_ID 122 ══════════════
-    la   t0, after_scheduler_return
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    # RTL-3: this object MEANS "unbounded" -- the switcher runs ordinary
+    # loads/stores after the scheduler OCRETURNs here, so PCC must be
+    # widened back to VEDA_PCC_UNBOUNDED. Length is now 40 bits, so the
+    # old compact-form 0xFFFF is a real 65535-byte compartment, not the
+    # sentinel; the compact form's Length field is only 16 bits and
+    # cannot express it at all. Use the WIDE path (veda.odt.populate
+    # .fast), whose Length/Perms come from veda_attr = Length[55:16] |
+    # Perms[15:0], to write the genuine 40-bit sentinel 0xFFFFFFFFFF.
+    li   t1, 0xFFFFFFFFFF      # Length = VEDA_PCC_UNBOUNDED sentinel
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002        # Perms = Invoke (unchanged from before)
+    csrw 0x7C4, t1             # veda_attr
+    la   t2, after_scheduler_return
     li   x1, 122
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- return-sentry source
+    mv   x2, t2
+    .insn r 0x0b, 0x0, 0x04, x5, x1, x2   # veda.odt.populate.fast x5, x1, x2  -- return-sentry source
 
     li   x1, 122
     .insn i 0x0b, 0x5, x9, x1, 0   # veda.bind c9, x1  -- return-sentry source, unsealed (permanent)

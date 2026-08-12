@@ -44,7 +44,13 @@
    // ───────────────────────────────────────────────────────────────────
    localparam bit [31:0] ODT_BASE = 32'h9000_0000;
    localparam int ODT_ENTRIES = 256;
-   localparam int ODT_ENTRY_BYTES = 16;
+   // RTL-3: 32 bytes. This is arithmetic, not preference -- the respec's
+   // fields need Base56+Length40+Perms16+gen24+valid1+owner8+retired1+
+   // id_hi36 = 182 bits even bit-packed, well over the 128 a 16-byte entry
+   // holds; dropping id_hi entirely still needs 146. Every field is
+   // byte-aligned (25 B used, 7 spare) so the three hand-written
+   // enumerations of this layout stay mechanically diffable.
+   localparam int ODT_ENTRY_BYTES = 32;
    // MILESTONE 24 (TCM_FAST_PATH_DESIGN.md): the first real DRAM-latency
    // number this core has ever modeled -- every prior milestone's own
    // cycle counts assumed odt_mem[]/elfmem[] access is always 1 cycle,
@@ -121,17 +127,17 @@
       // Permit_NMC_Compute -- the last bit isn't consumed by anything
       // built this milestone, set now so it doesn't need revisiting),
       // generation=0, valid=1.
-      {odt_mem[ODT_BASE+16+3], odt_mem[ODT_BASE+16+2], odt_mem[ODT_BASE+16+1], odt_mem[ODT_BASE+16+0]} = 32'h8001_0000;
-      {odt_mem[ODT_BASE+16+5], odt_mem[ODT_BASE+16+4]} = 16'h0040;
-      {odt_mem[ODT_BASE+16+7], odt_mem[ODT_BASE+16+6]} = 16'h100C;
-      odt_mem[ODT_BASE+16+8] = 8'h00;
-      odt_mem[ODT_BASE+16+9] = 8'h01;
+      {odt_mem[ODT_BASE+32+3], odt_mem[ODT_BASE+32+2], odt_mem[ODT_BASE+32+1], odt_mem[ODT_BASE+32+0]} = 32'h8001_0000;
+      {odt_mem[ODT_BASE+32+8], odt_mem[ODT_BASE+32+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+32+13], odt_mem[ODT_BASE+32+12]} = 16'h100C;
+      odt_mem[ODT_BASE+32+14] = 8'h00;
+      odt_mem[ODT_BASE+32+17] = 8'h01;
       // Milestone 12 addition: reset-seeded objects start genuinely
       // unowned (matches Sail's own veda_test_seed_odt() field-for-
       // field), not owned by hart 0 by default -- Bind's own real claim
       // logic (below) is what's actually under test, not a fixture that
       // pre-empts it.
-      odt_mem[ODT_BASE+16+10] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+32+18] = VEDA_OWNER_UNOWNED;
       // Milestone 2 addition: a second seeded object, deliberately
       // *without* Permit_NMC_Compute (Perms = 0x000C, Load+Store only),
       // so a real negative-control test can confirm NMC_ADD's own
@@ -139,12 +145,12 @@
       // identical field values already used for this exact purpose in
       // the Sail test scaffold (veda_regs.sail's own Object_ID=2 entry).
       // Object_ID=2 -> byte offset 2*16=32 from ODT_BASE.
-      {odt_mem[ODT_BASE+32+3], odt_mem[ODT_BASE+32+2], odt_mem[ODT_BASE+32+1], odt_mem[ODT_BASE+32+0]} = 32'h8001_0100;
-      {odt_mem[ODT_BASE+32+5], odt_mem[ODT_BASE+32+4]} = 16'h0040;
-      {odt_mem[ODT_BASE+32+7], odt_mem[ODT_BASE+32+6]} = 16'h000C;
-      odt_mem[ODT_BASE+32+8] = 8'h00;
-      odt_mem[ODT_BASE+32+9] = 8'h01;
-      odt_mem[ODT_BASE+32+10] = VEDA_OWNER_UNOWNED;
+      {odt_mem[ODT_BASE+64+3], odt_mem[ODT_BASE+64+2], odt_mem[ODT_BASE+64+1], odt_mem[ODT_BASE+64+0]} = 32'h8001_0100;
+      {odt_mem[ODT_BASE+64+8], odt_mem[ODT_BASE+64+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+64+13], odt_mem[ODT_BASE+64+12]} = 16'h000C;
+      odt_mem[ODT_BASE+64+14] = 8'h00;
+      odt_mem[ODT_BASE+64+17] = 8'h01;
+      odt_mem[ODT_BASE+64+18] = VEDA_OWNER_UNOWNED;
       // Milestone 12 addition: Object_ID=60 -> byte offset 60*16=960, a
       // THIRD seeded object, pre-claimed by owner_hart=0x63 (99 decimal)
       // -- a stand-in "other hart," since this single-core RTL testbench
@@ -162,12 +168,12 @@
       // Base=0x80010200, Length=0x40, Perms=0x000C (Load+Store), so this
       // fixture is also usable as an ordinary-looking object in every
       // respect except ownership.
-      {odt_mem[ODT_BASE+960+3], odt_mem[ODT_BASE+960+2], odt_mem[ODT_BASE+960+1], odt_mem[ODT_BASE+960+0]} = 32'h8001_0200;
-      {odt_mem[ODT_BASE+960+5], odt_mem[ODT_BASE+960+4]} = 16'h0040;
-      {odt_mem[ODT_BASE+960+7], odt_mem[ODT_BASE+960+6]} = 16'h000C;
-      odt_mem[ODT_BASE+960+8] = 8'h00;
-      odt_mem[ODT_BASE+960+9] = 8'h01;
-      odt_mem[ODT_BASE+960+10] = 8'h63;
+      {odt_mem[ODT_BASE+1920+3], odt_mem[ODT_BASE+1920+2], odt_mem[ODT_BASE+1920+1], odt_mem[ODT_BASE+1920+0]} = 32'h8001_0200;
+      {odt_mem[ODT_BASE+1920+8], odt_mem[ODT_BASE+1920+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+1920+13], odt_mem[ODT_BASE+1920+12]} = 16'h000C;
+      odt_mem[ODT_BASE+1920+14] = 8'h00;
+      odt_mem[ODT_BASE+1920+17] = 8'h01;
+      odt_mem[ODT_BASE+1920+18] = 8'h63;
    end
 
    // ═══════════════════════════════════════════════════════════════════
@@ -617,7 +623,8 @@
          //  throughout this file, e.g. $veda_trap_taken referenced here
          //  before its own definition too) hold the currently-active
          //  compartment's own bounds, narrowed away from
-         //  VEDA_PCC_UNBOUNDED (16'hFFFF, the reset/no-compartment
+         //  VEDA_PCC_UNBOUNDED (40'hFFFFFFFFFF as of RTL-3 -- all-ones in the
+         //  widened 40-bit Length field, the reset/no-compartment
          //  sentinel) only by a successful OCInvoke. This check is
          //  genuinely unconditional, every cycle, against the CURRENT
          //  $pc -- distinct in kind from every other check in this file,
@@ -625,9 +632,9 @@
          //  mirror (postlude/step_ext.sail's ext_fetch_check_pc) is
          //  identically unconditional, called before every fetch.
          // ─────────────────────────────────────────────────────────
-         $veda_pcc_violation = ($veda_pcc_length != 16'hFFFF) &&
-                                (($pc[31:0] < $veda_pcc_base) ||
-                                 ($pc[31:0] >= ($veda_pcc_base + {16'b0, $veda_pcc_length})));
+         $veda_pcc_violation = ($veda_pcc_length != 40'hFFFFFFFFFF) &&
+                                (({24'b0, $pc[31:0]} < $veda_pcc_base) ||
+                                 ({24'b0, $pc[31:0]} >= ($veda_pcc_base + {16'b0, $veda_pcc_length})));
 
          // ─────────────────────────────────────────────────────────
          //  INSTRUCTION MEMORY — Milestone A/B hand-assembled ROM[]
@@ -1185,14 +1192,7 @@
          //  the real 23-bit Object_ID field -- a real, stated scope
          //  boundary, not silent truncation.
          // ─────────────────────────────────────────────────────────
-         // INTERIM BRIDGE RTL-3: the capability's Object_ID is 44 bits now, but the
-         // ODT entry (and its id_hi anti-alias tag) is still the pre-respec
-         // 23-bit layout, so Bind still names a slot with 23 bits. RTL-3 widens the
-         // ODT entry and this becomes [43:0]. Written as an explicit narrow slice
-         // with this marker precisely because in Verilog a deliberate narrowing and
-         // a forgotten widening look identical -- grep INTERIM BRIDGE must reach
-         // zero when RTL-3 lands.
-         $veda_object_id[22:0] = $rs1_data[22:0];
+         $veda_object_id[43:0] = $rs1_data[43:0];
          // MILESTONE 24 Stage 2: judged on the FULL 23-bit Object_ID
          // above, NOT the truncated low-8-bit $veda_odt_idx below -- a
          // TCM-tier placement decision must never be judged on the
@@ -1203,11 +1203,11 @@
          // it for latency classification specifically.
          $veda_odt_tcm_hit = ($veda_object_id < {17'b0, TCM_ODT_ENTRIES[5:0]});
          $veda_odt_idx[7:0]    = $veda_object_id[7:0];
-         $veda_odt_addr[31:0]  = ODT_BASE + ({24'b0, $veda_odt_idx} * 32'd16);
-         $veda_odt_base[31:0]   = {odt_mem[$veda_odt_addr+3], odt_mem[$veda_odt_addr+2], odt_mem[$veda_odt_addr+1], odt_mem[$veda_odt_addr+0]};
-         $veda_odt_length[15:0] = {odt_mem[$veda_odt_addr+5], odt_mem[$veda_odt_addr+4]};
-         $veda_odt_perms[15:0]  = {odt_mem[$veda_odt_addr+7], odt_mem[$veda_odt_addr+6]};
-         $veda_odt_gen[7:0]     = odt_mem[$veda_odt_addr+8];
+         $veda_odt_addr[31:0]  = ODT_BASE + ({24'b0, $veda_odt_idx} * 32'd32);
+         $veda_odt_base[55:0]   = {odt_mem[$veda_odt_addr+6], odt_mem[$veda_odt_addr+5], odt_mem[$veda_odt_addr+4], odt_mem[$veda_odt_addr+3], odt_mem[$veda_odt_addr+2], odt_mem[$veda_odt_addr+1], odt_mem[$veda_odt_addr+0]};
+         $veda_odt_length[39:0] = {odt_mem[$veda_odt_addr+11], odt_mem[$veda_odt_addr+10], odt_mem[$veda_odt_addr+9], odt_mem[$veda_odt_addr+8], odt_mem[$veda_odt_addr+7]};
+         $veda_odt_perms[15:0]  = {odt_mem[$veda_odt_addr+13], odt_mem[$veda_odt_addr+12]};
+         $veda_odt_gen[23:0]    = {odt_mem[$veda_odt_addr+16], odt_mem[$veda_odt_addr+15], odt_mem[$veda_odt_addr+14]};
          // RTL MILESTONE 15: the low-8-bit ODT index above aliases any
          // two Object_IDs sharing a low byte onto the same physical
          // slot -- found via a real empirical reproduction
@@ -1225,17 +1225,22 @@
          // consumer -- owner_ok, bind_trap, rebind_ok -- inherits the
          // fix with no other change needed) instead of silently
          // returning a different object's metadata.
-         $veda_odt_id_hi[14:0] = {odt_mem[$veda_odt_addr+12][6:0], odt_mem[$veda_odt_addr+11]};
-         // INTERIM BRIDGE RTL-3: 15-bit id_hi anti-alias tag, pre-respec ODT layout.
-         $veda_odt_id_match    = ($veda_odt_id_hi == $veda_object_id[22:8]);
-         $veda_odt_valid        = odt_mem[$veda_odt_addr+9][0] && $veda_odt_id_match;
+         // RTL-3: id_hi is 36 bits now -- Object_ID[43:8] -- so the anti-alias tag
+         // covers the FULL 44-bit namespace. Sail bounds the index instead
+         // (a flat vector(2^44) will not compile there); RTL is a 256-entry
+         // direct-mapped table with a hi-tag, so it mirrors the PROPERTY (no two
+         // Object_IDs may alias one slot) rather than Sail's MECHANISM, at the
+         // true width, for 3 extra bytes in an entry with 7 spare.
+         $veda_odt_id_hi[35:0] = {odt_mem[$veda_odt_addr+24], odt_mem[$veda_odt_addr+23], odt_mem[$veda_odt_addr+22], odt_mem[$veda_odt_addr+21], odt_mem[$veda_odt_addr+20]};
+         $veda_odt_id_match    = ($veda_odt_id_hi == $veda_object_id[43:8]);
+         $veda_odt_valid        = odt_mem[$veda_odt_addr+17][0] && $veda_odt_id_match;
          // Milestone 12: the owner-hart byte, read alongside every other
          // ODT field above -- an object with no live owner yet
          // (VEDA_OWNER_UNOWNED), or one this same hart already owns, is
          // fair game for Bind/Rebind to claim (or re-claim, idempotently)
          // -- mirrors veda_bind_insts.sail's own `owner_ok` boolean
          // field-for-field.
-         $veda_odt_owner[7:0]  = odt_mem[$veda_odt_addr+10];
+         $veda_odt_owner[7:0]  = odt_mem[$veda_odt_addr+18];
          $veda_owner_ok        = ($veda_odt_owner == VEDA_OWNER_UNOWNED) || ($veda_odt_owner == MHARTID);
          // RTL MILESTONE 16: the 8-bit generation counter, empirically
          // confirmed to wrap after 256 destroy/re-populate cycles on the
@@ -1255,7 +1260,7 @@
          // allocated-but-unused space after Milestone 15's own use of
          // +11/+12 ("88 bits used of 128 available" plus Milestone 15's
          // 15 more still leaves 3 full spare bytes).
-         $veda_odt_retired     = odt_mem[$veda_odt_addr+13][0];
+         $veda_odt_retired     = odt_mem[$veda_odt_addr+19][0];
          // Milestone 12: plain Bind's own real, genuine hard-trap --
          // a LIVE object owned by a genuinely different hart, distinct
          // in kind from "object not found" (Milestone 13, below). Joins
@@ -1387,10 +1392,14 @@
          // wrapping back to 0 -- the retirement write-back below (near
          // odt_mem[...+13]) is what actually stops the slot from ever
          // being reused once this point is reached.
-         $veda_odtpd_new_gen[7:0] = ($is_veda_odt_destroy || $veda_odt_valid) ?
-                                    (($veda_odt_gen == 8'hFF) ? 8'hFF : ($veda_odt_gen + 8'd1)) : $veda_odt_gen;
+         // RTL-3: generation is 24 bits in the widened entry, so the
+         // saturate-then-retire threshold moves with the field -- 0xFFFFFF, not
+         // 0xFF. The mechanism is unchanged: freeze at max, retire on the next
+         // bump. Retirement ceiling goes from 255 reuses per slot to ~16.7M.
+         $veda_odtpd_new_gen[23:0] = ($is_veda_odt_destroy || $veda_odt_valid) ?
+                                    (($veda_odt_gen == 24'hFFFFFF) ? 24'hFFFFFF : ($veda_odt_gen + 24'd1)) : $veda_odt_gen;
          $veda_odtpd_new_retired = $veda_odt_retired ||
-                                    (($is_veda_odt_destroy || $veda_odt_valid) && ($veda_odt_gen == 8'hFF));
+                                    (($is_veda_odt_destroy || $veda_odt_valid) && ($veda_odt_gen == 24'hFFFFFF));
          // Populate: Base/Length/Perms come from rs2's packed descriptor
          // (Section 5.1: Base[31:0] in bits[63:32], Length[15:0] in
          // bits[31:16], Perms[15:0] in bits[15:0]). Populate-Fast (RTL
@@ -1400,10 +1409,19 @@
          // (defined further below). Destroy: preserved unchanged from
          // old_entry, matching Sail's own VEDA_ODT_DESTROY exactly (only
          // valid/generation actually change).
-         $veda_odtpd_new_base[31:0]   = $is_veda_odt_populate      ? $rs2_data[63:32] :
-                                          $is_veda_odt_populate_fast ? $rs2_data[31:0]  : $veda_odt_base;
-         $veda_odtpd_new_length[15:0] = $is_veda_odt_populate      ? $rs2_data[31:16] :
-                                          $is_veda_odt_populate_fast ? $veda_attr[31:16] : $veda_odt_length;
+         // RTL-3: the two populate paths now differ in REACH, matching Sail.
+         // Plain populate keeps its packed single-GPR descriptor and is
+         // explicitly the COMPACT form -- Base32/Length16 zero-extended into
+         // the wide entry -- because Base56+Length40+Perms16 = 112 bits simply
+         // cannot fit one 64-bit register. Every existing program that builds
+         // a packed descriptor keeps working unchanged. Populate-Fast is the
+         // WIDE form: Base at full 56 bits straight from rs2, Length40/Perms16
+         // from the widened veda_attr. The limit lives visibly in the compact
+         // ENCODING, not as a silent truncation of a wide value.
+         $veda_odtpd_new_base[55:0]   = $is_veda_odt_populate      ? {24'b0, $rs2_data[63:32]} :
+                                          $is_veda_odt_populate_fast ? $rs2_data[55:0]  : $veda_odt_base;
+         $veda_odtpd_new_length[39:0] = $is_veda_odt_populate      ? {24'b0, $rs2_data[31:16]} :
+                                          $is_veda_odt_populate_fast ? $veda_attr[55:16] : $veda_odt_length;
          $veda_odtpd_new_perms[15:0]  = $is_veda_odt_populate      ? $rs2_data[15:0]  :
                                           $is_veda_odt_populate_fast ? $veda_attr[15:0]  : $veda_odt_perms;
          // Only consumed by the trailing raw \SV always_ff block below
@@ -1777,8 +1795,8 @@
          // exists in RTL (a later milestone), same real caveat V-A/V-B
          // had in Sail.
          $veda_check_odt_idx[7:0]   = $veda_rs1cap_object_id[7:0];
-         $veda_check_odt_addr[31:0] = ODT_BASE + ({24'b0, $veda_check_odt_idx} * 32'd16);
-         $veda_check_odt_gen[7:0]   = odt_mem[$veda_check_odt_addr+8];
+         $veda_check_odt_addr[31:0] = ODT_BASE + ({24'b0, $veda_check_odt_idx} * 32'd32);
+         $veda_check_odt_gen[23:0]  = {odt_mem[$veda_check_odt_addr+16], odt_mem[$veda_check_odt_addr+15], odt_mem[$veda_check_odt_addr+14]};
          // RTL MILESTONE 15 (same fix as the Bind-side lookup above):
          // the dereference-time re-check must also confirm the slot
          // still holds the SAME real Object_ID the capability was bound
@@ -1786,11 +1804,9 @@
          // successfully dereferencing after Object_ID=356 (a low-byte
          // alias) took over slot 100, since generation/valid alone
          // can't tell the two apart.
-         $veda_check_odt_id_hi[14:0] = {odt_mem[$veda_check_odt_addr+12][6:0], odt_mem[$veda_check_odt_addr+11]};
-         // INTERIM BRIDGE RTL-3: dereference-time id_hi check, same pre-respec layout.
-         // $veda_rs1cap_object_id is 44 bits now; only its low 23 reach the ODT.
-         $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[22:8]);
-         $veda_check_odt_valid      = odt_mem[$veda_check_odt_addr+9][0] && $veda_check_odt_id_match;
+         $veda_check_odt_id_hi[35:0] = {odt_mem[$veda_check_odt_addr+24], odt_mem[$veda_check_odt_addr+23], odt_mem[$veda_check_odt_addr+22], odt_mem[$veda_check_odt_addr+21], odt_mem[$veda_check_odt_addr+20]};
+         $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[43:8]);
+         $veda_check_odt_valid      = odt_mem[$veda_check_odt_addr+17][0] && $veda_check_odt_id_match;
          $veda_gen_stale = (!$veda_check_odt_valid) || ($veda_check_odt_gen != $veda_rs1cap_reserved);
 
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
@@ -2681,11 +2697,11 @@
                              $csr_is_mepc   ? $mepc :
                              $csr_is_mcause ? $mcause :
                              $csr_is_mtval  ? $mtval :
-                             $csr_is_veda_pcc_base     ? {32'b0, $veda_pcc_base} :
-                             $csr_is_veda_pcc_length   ? {48'b0, $veda_pcc_length} :
-                             $csr_is_veda_mepcc_base   ? {32'b0, $veda_mepcc_base} :
-                             $csr_is_veda_mepcc_length ? {48'b0, $veda_mepcc_length} :
-                             $csr_is_veda_attr         ? {32'b0, $veda_attr} :
+                             $csr_is_veda_pcc_base     ? {8'b0, $veda_pcc_base} :
+                             $csr_is_veda_pcc_length   ? {24'b0, $veda_pcc_length} :
+                             $csr_is_veda_mepcc_base   ? {8'b0, $veda_mepcc_base} :
+                             $csr_is_veda_mepcc_length ? {24'b0, $veda_mepcc_length} :
+                             $csr_is_veda_attr         ? $veda_attr :
                              $csr_is_veda_mode         ? {32'b0, $veda_mode} :
                                               64'b0;
          // CSRRS with rs1=x0 must not write the CSR at all (real
@@ -2720,7 +2736,7 @@
             ($csr_is_veda_pcc_base || $csr_is_veda_pcc_length ||
              $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
              $csr_is_veda_mode || $csr_is_mtvec) &&
-            ($veda_pcc_length != 16'hFFFF);
+            ($veda_pcc_length != 40'hFFFFFFFFFF);
          `BOGUS_USE($csr_rdata)
          `BOGUS_USE($csr_wdata)
 
@@ -2837,7 +2853,7 @@
          //  $mtvec/$mepc already established (Milestone 9), applied to a
          //  new, genuinely different kind of state (a fetch-time bound,
          //  not an ordinary CSR value alone). Reset to
-         //  VEDA_PCC_UNBOUNDED (16'hFFFF) -- a real correctness
+         //  VEDA_PCC_UNBOUNDED (40'hFFFFFFFFFF as of RTL-3) -- a real correctness
          //  requirement, not styling: left at 0 by default, every fetch
          //  would bounds-check against an empty window at address 0 and
          //  hard-trap on the very first cycle (the identical real reason
@@ -2875,19 +2891,19 @@
          // -- software retains full override, this is a default not a
          // forced behavior, matching the Sail side's own explicit-override
          // test property); (5) retain.
-         $veda_pcc_base[31:0] = $reset ? 32'b0 :
-                                 (>>1$veda_trap_taken) ? 32'b0 :
-                                 (>>1$is_mret && (>>1$veda_mepcc_length != 16'hFFFF)) ? >>1$veda_mepcc_base :
+         $veda_pcc_base[55:0] = $reset ? 56'b0 :
+                                 (>>1$veda_trap_taken) ? 56'b0 :
+                                 (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_base :
                                  (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_base :
-                                 (>>1$csr_write_en && >>1$csr_is_veda_pcc_base) ? >>1$csr_wdata[31:0] :
+                                 (>>1$csr_write_en && >>1$csr_is_veda_pcc_base) ? >>1$csr_wdata[55:0] :
                                                                                    >>1$veda_pcc_base;
-         $veda_pcc_length[15:0] = $reset ? 16'hFFFF :
-                                   (>>1$veda_trap_taken) ? 16'hFFFF :
-                                   (>>1$is_mret && (>>1$veda_mepcc_length != 16'hFFFF)) ? >>1$veda_mepcc_length :
+         $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
+                                   (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :
+                                   (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_length :
                                    (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_length :
-                                   (>>1$csr_write_en && >>1$csr_is_veda_pcc_length) ? >>1$csr_wdata[15:0] :
+                                   (>>1$csr_write_en && >>1$csr_is_veda_pcc_length) ? >>1$csr_wdata[39:0] :
                                                                                        >>1$veda_pcc_length;
          // Real bug found (not copied blindly from Sail) while designing
          // this mirror: the pre-existing trap-time capture below was
@@ -2897,7 +2913,7 @@
          // a second, nested trap between a first trap's save and its own
          // later mret would silently overwrite the first trap's real saved
          // bounds with {don't-care, UNBOUNDED}. Fixed by gating the capture
-         // itself on `>>1$veda_pcc_length != 16'hFFFF` (a compartment was
+         // itself on `>>1$veda_pcc_length != 40'hFFFFFFFFFF` (a compartment was
          // genuinely live at the moment of the trap) -- exactly the Sail
          // side's own already-adversarially-reviewed conditional-capture
          // design (veda_pcc_save_and_reset()'s own guard). Self-consuming:
@@ -2905,15 +2921,15 @@
          // {0, UNBOUNDED} so a stale value can never be restored twice --
          // the identical self-consuming property the Sail side's own design
          // already proved necessary for the same nested-trap hazard class.
-         $veda_mepcc_base[31:0] = $reset ? 32'b0 :
-                                   (>>1$veda_trap_taken && (>>1$veda_pcc_length != 16'hFFFF)) ? >>1$veda_pcc_base :
-                                   (>>1$is_mret && (>>1$veda_mepcc_length != 16'hFFFF)) ? 32'b0 :
-                                   (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base) ? >>1$csr_wdata[31:0] :
+         $veda_mepcc_base[55:0] = $reset ? 56'b0 :
+                                   (>>1$veda_trap_taken && (>>1$veda_pcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_pcc_base :
+                                   (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? 56'b0 :
+                                   (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base) ? >>1$csr_wdata[55:0] :
                                                                                        >>1$veda_mepcc_base;
-         $veda_mepcc_length[15:0] = $reset ? 16'hFFFF :
-                                     (>>1$veda_trap_taken && (>>1$veda_pcc_length != 16'hFFFF)) ? >>1$veda_pcc_length :
-                                     (>>1$is_mret && (>>1$veda_mepcc_length != 16'hFFFF)) ? 16'hFFFF :
-                                     (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length) ? >>1$csr_wdata[15:0] :
+         $veda_mepcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
+                                     (>>1$veda_trap_taken && (>>1$veda_pcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_pcc_length :
+                                     (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? 40'hFFFFFFFFFF :
+                                     (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
          // RTL Milestone 18: plain read/write CSR, no other write source
          // (unlike veda_pcc_base/length, which also get written by a
@@ -2922,8 +2938,8 @@
          // all-zero Length/Perms just makes the first Populate-Fast
          // object real but permission-less until software actually sets
          // this CSR, matching the Sail side's own identical reasoning.
-         $veda_attr[31:0] = $reset ? 32'b0 :
-                              (>>1$csr_write_en && >>1$csr_is_veda_attr) ? >>1$csr_wdata[31:0] :
+         $veda_attr[63:0] = $reset ? 64'b0 :
+                              (>>1$csr_write_en && >>1$csr_is_veda_attr) ? >>1$csr_wdata[63:0] :
                                                                             >>1$veda_attr;
          // RTL Milestone 19: veda_mode, bit 0 = veda_purecap. Identical
          // simple reset/CSRRW-only pattern as veda_attr directly above --
@@ -3146,7 +3162,7 @@
          // shared code path by construction, matching the Sail side's own
          // "never interferes with a legitimate Veda access" guarantee.
          $veda_purecap_violation = ($is_load || $is_store) &&
-                                    ($veda_mode[0] || ($veda_pcc_length != 16'hFFFF));
+                                    ($veda_mode[0] || ($veda_pcc_length != 40'hFFFFFFFFFF));
          // VEDA-CORE RTL MILESTONE 7: base ISA stores can land inside the
          // same real elfmem[] region Veda-Core objects live in (in
          // act4_mode) -- must clear that granule's tag too (see the byte-
@@ -3675,34 +3691,51 @@
    // +elf_hex/act4_mode anyway.
    always_ff @(posedge clk) begin
       if (act4_mode && (CPU_is_veda_odt_populate_a0 || CPU_is_veda_odt_populate_fast_a0) && !CPU_veda_odt_populate_violation_a0) begin
+         // RTL-3 layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
+         // +12..+13, generation +14..+16, valid +17, owner_hart +18, retired
+         // +19, id_hi +20..+24. This enumeration and the two read enumerations
+         // ~2400 lines apart are three hand-written copies of ONE layout with
+         // no shared macro -- byte alignment is what keeps them diffable.
          odt_mem[CPU_veda_odt_addr_a0+0] <= CPU_veda_odtpd_new_base_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+1] <= CPU_veda_odtpd_new_base_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+2] <= CPU_veda_odtpd_new_base_a0[23:16];
          odt_mem[CPU_veda_odt_addr_a0+3] <= CPU_veda_odtpd_new_base_a0[31:24];
-         odt_mem[CPU_veda_odt_addr_a0+4] <= CPU_veda_odtpd_new_length_a0[7:0];
-         odt_mem[CPU_veda_odt_addr_a0+5] <= CPU_veda_odtpd_new_length_a0[15:8];
-         odt_mem[CPU_veda_odt_addr_a0+6] <= CPU_veda_odtpd_new_perms_a0[7:0];
-         odt_mem[CPU_veda_odt_addr_a0+7] <= CPU_veda_odtpd_new_perms_a0[15:8];
-         odt_mem[CPU_veda_odt_addr_a0+8] <= CPU_veda_odtpd_new_gen_a0;
-         odt_mem[CPU_veda_odt_addr_a0+9] <= 8'h01;
+         odt_mem[CPU_veda_odt_addr_a0+4] <= CPU_veda_odtpd_new_base_a0[39:32];
+         odt_mem[CPU_veda_odt_addr_a0+5] <= CPU_veda_odtpd_new_base_a0[47:40];
+         odt_mem[CPU_veda_odt_addr_a0+6] <= CPU_veda_odtpd_new_base_a0[55:48];
+         odt_mem[CPU_veda_odt_addr_a0+7] <= CPU_veda_odtpd_new_length_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+8] <= CPU_veda_odtpd_new_length_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+9] <= CPU_veda_odtpd_new_length_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+10] <= CPU_veda_odtpd_new_length_a0[31:24];
+         odt_mem[CPU_veda_odt_addr_a0+11] <= CPU_veda_odtpd_new_length_a0[39:32];
+         odt_mem[CPU_veda_odt_addr_a0+12] <= CPU_veda_odtpd_new_perms_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+13] <= CPU_veda_odtpd_new_perms_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_odtpd_new_gen_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+17] <= 8'h01;
          // RTL MILESTONE 15: record the real full Object_ID's upper 15
          // bits in the real, previously-unused bytes +11/+12, so a
          // later low-byte-aliasing lookup can be told apart from the
          // object that genuinely owns this slot (the two new checks
          // above).
-         odt_mem[CPU_veda_odt_addr_a0+11] <= CPU_veda_object_id_a0[15:8];
-         // INTERIM BRIDGE RTL-3: id_hi write, pre-respec 23-bit ODT layout.
-         odt_mem[CPU_veda_odt_addr_a0+12] <= {1'b0, CPU_veda_object_id_a0[22:16]};
+         odt_mem[CPU_veda_odt_addr_a0+20] <= CPU_veda_object_id_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+21] <= CPU_veda_object_id_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+22] <= CPU_veda_object_id_a0[31:24];
+         odt_mem[CPU_veda_odt_addr_a0+23] <= CPU_veda_object_id_a0[39:32];
+         odt_mem[CPU_veda_odt_addr_a0+24] <= {4'b0, CPU_veda_object_id_a0[43:40]};
          // RTL MILESTONE 16: commit the retirement bit computed above --
          // once generation would wrap, this slot can never legitimately
          // distinguish a new object from an old one again, so ODT
          // -Populate itself is permanently refused for it from here on
          // ($veda_odt_populate_violation, above).
-         odt_mem[CPU_veda_odt_addr_a0+13] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
+         odt_mem[CPU_veda_odt_addr_a0+19] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
       end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0) begin
-         odt_mem[CPU_veda_odt_addr_a0+8] <= CPU_veda_odtpd_new_gen_a0;
-         odt_mem[CPU_veda_odt_addr_a0+9] <= 8'h00;
-         odt_mem[CPU_veda_odt_addr_a0+13] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
+         odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_odtpd_new_gen_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+17] <= 8'h00;
+         odt_mem[CPU_veda_odt_addr_a0+19] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
       end
    end
 
@@ -3717,7 +3750,7 @@
    // write on every success path, not just first-time claims.
    always_ff @(posedge clk) begin
       if (act4_mode && CPU_veda_owner_claim_en_a0) begin
-         odt_mem[CPU_veda_odt_addr_a0+10] <= MHARTID;
+         odt_mem[CPU_veda_odt_addr_a0+18] <= MHARTID;
       end
    end
 

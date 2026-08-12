@@ -6,7 +6,8 @@ _start:
     # bounded OCInvoke compartment -- proves Milestone 21's "universal
     # PCC reset on any trap" applies to the new ECALL trap too, not just
     # assumed: veda_pcc_base/veda_pcc_length must read back unbounded
-    # (0 / 0xFFFF) from inside the trap handler, while veda_mepcc_base/
+    # (0 / 0xFFFFFFFFFF -- RTL-3 40-bit Length) from inside the trap
+    # handler, while veda_mepcc_base/
     # veda_mepcc_length (CSR 0x7c2/0x7c3) must hold the compartment's
     # true pre-trap bounds -- and mepc must equal ECALL's own address
     # inside the compartment (== comp_entry itself, since ECALL is the
@@ -16,7 +17,7 @@ _start:
     # veda_smoke_mosB_sentry.S.
     #
     # compartment (Object_ID=100/101/102, Length=0x0040) --
-    # Object_IDs personally grepped against every existing rtl/sim/*.S
+    # Object_IDs personally grepped against every existing rtl/sim .S
     # file's own usage before picking: 100-199 is completely free.
     # ─────────────────────────────────────────────────────────────
     la   t0, trap_handler
@@ -65,7 +66,9 @@ trap_handler:
     csrr x10, 0x7c0                       # veda_pcc_base
     bnez x10, fail
     csrr x10, 0x7c1                       # veda_pcc_length
-    li   x11, 0xFFFF
+    li   x11, 0xFFFFFFFFFF                # RTL-3: Length is 40 bits wide, so the
+                                          # "unbounded" all-ones sentinel is
+                                          # 0xFFFFFFFFFF, not the old 16-bit 0xFFFF
     bne  x10, x11, fail
 
     # veda_mepcc_base/_length must hold the compartment's TRUE pre-trap

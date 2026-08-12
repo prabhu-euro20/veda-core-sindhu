@@ -10,8 +10,10 @@ _start:
     # Core's own 0x18) instead of silently succeeding and undoing the
     # compartment's own bounding. Proves the CSR's own value is
     # genuinely unaffected: after the trap's save-and-reset, it reads
-    # back exactly 0xFFFF (unbounded) -- neither the original narrow
-    # Length nor the attacker's own write value.
+    # back exactly 0xFFFFFFFFFF (unbounded) -- neither the original
+    # narrow Length nor the attacker's own write value.
+    # RTL-3: Length widened 16 -> 40 bits, so the unbounded sentinel
+    # (all ones in the Length field) is now 0xFFFFFFFFFF, not 0xFFFF.
     # ─────────────────────────────────────────────────────────────
     la   t0, trap_handler
     csrw mtvec, t0
@@ -47,7 +49,7 @@ _start:
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4   -- narrows PCC to [compartment_start, compartment_start+0x40)
 
 compartment_start:
-    li   t3, 0x1000                # a value distinct from both the original Length (0x40) and UNBOUNDED (0xFFFF)
+    li   t3, 0x1000                # a value distinct from both the original Length (0x40) and UNBOUNDED (0xFFFFFFFFFF)
     csrw 0x7c1, t3                 # BLOCKED: self-escape attempt -- must hard-trap
 
     li   x22, 0xBAD1                 # must NOT be reached directly
@@ -59,7 +61,7 @@ trap_handler:
     bne  t4, t5, fail
 
     csrr t4, 0x7c1                  # veda_pcc_length after the trap's own save-and-reset
-    li   t5, 0xFFFF                 # must be UNBOUNDED -- neither 0x40 (original) nor 0x1000 (attacker's value) persisted
+    li   t5, 0xFFFFFFFFFF           # must be UNBOUNDED (RTL-3: 40-bit Length sentinel) -- neither 0x40 (original) nor 0x1000 (attacker's value) persisted
     bne  t4, t5, fail
 
     li   x21, 0x600D                 # sentinel: reached the handler, self-escape genuinely blocked
@@ -68,7 +70,7 @@ trap_handler:
     # comment -- mepcc still holds this test's real narrow compartment
     # (Length=0x40), so an explicit clear is now required before mret to
     # avoid an auto-restore re-narrowing PCC right back down.
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF            # RTL-3: 40-bit Length unbounded sentinel
     csrw 0x7c3, t4                   # veda_mepcc_length := unbounded
 
     la   t4, recovery

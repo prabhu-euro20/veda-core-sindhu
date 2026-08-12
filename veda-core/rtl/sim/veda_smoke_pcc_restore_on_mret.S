@@ -119,7 +119,8 @@ resume2:
     csrr t3, 0x7c0
     bnez t3, fail                          # must be 0 (unbounded), not phase2_entry
     csrr t3, 0x7c1
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF                  # RTL-3: Length is 40 bits, so the UNBOUNDED
+                                           # sentinel is 0xFFFFFFFFFF, not the old 0xFFFF
     bne  t3, t4, fail
     li   x25, 0x600D                       # Phase 2: explicit override honored
 
@@ -128,12 +129,15 @@ phase3_setup:
     # ============================== PHASE 3 ==============================
     la   t0, phase3_entry
     slli t0, t0, 32
-    li   t1, 0x00480402                   # Length=0x0048 (72B) -- exact byte budget through
+    li   t1, 0x004C0402                   # Length=0x004C (76B) -- exact byte budget through
                                           # resume3's own CSR-readback checks AND the exit
                                           # ecall that leaves the compartment (objdump-verified:
-                                          # the exit ecall's own last byte sits at offset 0x47,
-                                          # fail: starts exactly at offset 0x48, the first byte
-                                          # genuinely outside this bound).
+                                          # the exit ecall's own last byte sits at offset 0x4B,
+                                          # fail: starts exactly at offset 0x4C, the first byte
+                                          # genuinely outside this bound). Was 0x0048 before
+                                          # RTL-3: resume3's UNBOUNDED compare constant grew
+                                          # from a 2-instruction li 0xFFFF to a 3-instruction
+                                          # li 0xFFFFFFFFFF, so the same code is 4 bytes longer.
     or   t0, t0, t1
     li   x1, 145
     mv   x2, t0
@@ -162,10 +166,10 @@ resume3:
     la   t4, phase3_entry
     bne  t3, t4, fail                      # must be phase3_entry, NOT corrupted by the nested trap
     csrr t3, 0x7c1
-    li   t4, 0x0048                        # matches the real, objdump-confirmed populate Length above
+    li   t4, 0x004C                        # matches the real, objdump-confirmed populate Length above
     bne  t3, t4, fail
     csrr t3, 0x7c3                         # mepcc_length must now be self-consumed (UNBOUNDED)
-    li   t4, 0xFFFF
+    li   t4, 0xFFFFFFFFFF                  # RTL-3: 40-bit Length field -- UNBOUNDED sentinel
     bne  t3, t4, fail
     li   x26, 0x600D                       # Phase 3: nested-trap staleness + repeatability, all correct
 
@@ -236,14 +240,14 @@ h_phase1_escape:
     csrr t3, mtval
     li   t4, 0x201
     bne  t3, t4, fail
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
     csrw 0x7c3, t3                        # veda_mepcc_length := unbounded
     la   t3, phase2_setup
     csrw mepc, t3
     mret
 
 h_phase2:
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
     csrw 0x7c3, t3                        # explicit override: clear mepcc_length
     csrr t3, mepc
     addi t3, t3, 4
@@ -301,7 +305,7 @@ h_phase3_inner:
     #    restore-triggering mret. --
     csrr s0, 0x7c2
     csrr s1, 0x7c3
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
     csrw 0x7c3, t3
     csrr t3, mepc
     addi t3, t3, 4
@@ -320,7 +324,7 @@ h_phase3_exit:
     #    otherwise auto-restore would re-narrow PCC right back down to
     #    phase3_entry, and the fetch of all_done: itself (outside those
     #    bounds) would immediately re-trap. --
-    li   t3, 0xFFFF
+    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
     csrw 0x7c3, t3                        # veda_mepcc_length := unbounded
     la   t3, all_done
     csrw mepc, t3

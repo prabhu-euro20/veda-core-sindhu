@@ -23,7 +23,7 @@ _start:
     # using it as a resume address.
     #
     # Object_IDs 110-122 (13 total) -- personally grepped every
-    # existing rtl/sim/*.S file's own usage (now including the two new
+    # existing rtl/sim .S file's own usage (now including the two new
     # Milestone 23 ecall tests' own 100/101/102) before picking:
     # 110-199 confirmed completely free.
     #
@@ -149,7 +149,8 @@ _start:
 
     # ══════════════ thread_index capability: Object_ID 121 (Load|Store) ══════════════
     # Confirmed via veda_core.tlv:2724-2725 directly: ordinary loads/stores
-    # are unconditionally blocked while veda_pcc_length != 16'hFFFF, the
+    # are unconditionally blocked while veda_pcc_length != VEDA_PCC_UNBOUNDED
+    # (RTL-3: 40'hFFFFFFFFFF, formerly 16'hFFFF), the
     # identical rule already confirmed on the Sail side. SCHEDULER (itself
     # OCInvoke-entered) must use OCL.D/OCS.D for thread_index; SWITCHER
     # (runs unbounded) uses ordinary lw/sw freely.
@@ -169,14 +170,23 @@ _start:
     .insn i 0x0b, 0x5, x8, x1, 0   # veda.bind c8, x1  -- thread_index, unsealed (permanent)
 
     # ══════════════ return-sentry SOURCE: Object_ID 122 (Base=after_scheduler_return,
-    #    Length=0xFFFF=VEDA_PCC_UNBOUNDED, Perms=Execute) ══════════════
-    la   t0, after_scheduler_return
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
+    #    Length=VEDA_PCC_UNBOUNDED, Perms=Execute) ══════════════
+    # RTL-3: Length widened to 40 bits, so VEDA_PCC_UNBOUNDED is now
+    # 0xFFFFFFFFFF -- a packed 0xFFFF would be a REAL 65535-byte
+    # compartment, which would leave the switcher running narrowed after
+    # OCRETURN and hard-trap its own ordinary lw/sw. The compact packed
+    # populate's Length field is only 16 bits and cannot express the
+    # 40-bit sentinel, so this one object is built with the WIDE path
+    # (veda.odt.populate.fast), whose Length/Perms come from veda_attr
+    # (Length[55:16] | Perms[15:0]). Every other object here keeps the
+    # compact form -- their Lengths are real finite sizes.
+    li   t1, 0xFFFFFFFFFF        # Length = VEDA_PCC_UNBOUNDED (40-bit all-ones)
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002          # Perms=Execute
+    csrw 0x7c4, t1               # veda_attr
+    la   t2, after_scheduler_return
     li   x1, 122
-    mv   x2, t0
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- return-sentry source
+    .insn r 0x0b, 0x0, 0x04, x5, x1, t2   # veda.odt.populate.fast x5, x1, t2  -- return-sentry source
 
     li   x1, 122
     .insn i 0x0b, 0x5, x9, x1, 0   # veda.bind c9, x1  -- return-sentry source, unsealed (permanent)
