@@ -187,5 +187,46 @@ was recreated, so a mutation can never be "applied" to a binary that does not co
   bind modes; CAndPerm writes only the register and never the table. So a domain that can name a
   COW object's Object_ID can simply re-Bind it and get a writable capability. COW must be enforced by
   hardware attenuation at Bind, not by software having handed out attenuated capabilities.
-- **`PERM_STORE_VIOLATION` (0x13) has zero test coverage** across the whole corpus, despite being the
-  path DESIGN_02 plans to reuse for the COW fault. Worth closing before building COW on top of it.
+- **`PERM_STORE_VIOLATION` (0x13) had zero test coverage** across the whole corpus, despite being the
+  path DESIGN_02 plans to reuse for the COW fault. **Now closed -- see Section 6.**
+
+## 6. Follow-on: closing the rights-attenuation enforcement gap
+
+Grounding this increment surfaced a gap worth more than the cause code it was first noticed as.
+
+The corpus exercised CAndPerm only as a **metadata** operation: `vc_candperm.S` strips permissions
+and inspects the result with `cgetperm`/`cgettag`; `vc_candperm_neg.S` checks the sealed-source
+soft-fail. **Neither ever attempts an access with an attenuated capability** -- zero `ocs.d` between
+them. So nothing anywhere proved that removing a right actually *blocks* anything. Attenuation was
+tested as bookkeeping, never as enforcement.
+
+Consequently both `VEDA_CAUSE_PERM_LOAD_VIOLATION` (0x12) and `VEDA_CAUSE_PERM_STORE_VIOLATION`
+(0x13) had **zero coverage**, despite both being implemented.
+
+**`vc_candperm_enforce_neg.S`** closes it in five phases, and phases 3 and 5 are what make it a
+real test rather than two trap assertions -- they prove the attenuation is **precise**, removing
+exactly the named right and leaving the other intact. A blanket "capability is now useless"
+implementation would pass phases 2 and 4 and fail these.
+
+1. full capability round-trips (positive control, so a later failure cannot be blamed on setup)
+2. Permit_Store cleared -> `ocs.d` traps **0x13**, `mtval` `0x33`
+3. the same capability **still loads**, and reads the **original** value -- which also proves the
+   refused store never reached memory
+4. Permit_Load cleared -> `ocl.d` traps **0x12**, `mtval` `0x92`
+5. the same capability **still stores**
+
+**Result: 80/80.** Mutation, two mutants each deleting one previously-uncovered check:
+
+| Mutant | What it removes | Result | Tests that fell |
+|---|---|---|---|
+| **M1** | the `Permit_Store` check entirely | 79/80 -- KILLED | `candperm_enforce_neg` |
+| **M2** | the `Permit_Load` check entirely | 79/80 -- KILLED | `candperm_enforce_neg` |
+
+Both fell on **only** the new test. That is the measurement of the gap: deleting either check
+outright left **79 of 80 tests passing**. Both halves of Veda-Core's rights attenuation -- the
+whole point of CAndPerm -- could have been silently removed and every gate in the project would
+have reported green.
+
+This matters for what comes next rather than only for tidiness: DESIGN_02's copy-on-write reuses
+the store-side path as its COW fault. Building COW on it before this would have been building on a
+trap no test had ever fired.
