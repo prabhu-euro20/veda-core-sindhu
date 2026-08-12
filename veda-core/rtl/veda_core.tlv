@@ -437,7 +437,7 @@
       //  fixtures on that single check is not a dependency worth taking.
       {odt_mem[ODT_BASE+3328+3], odt_mem[ODT_BASE+3328+2], odt_mem[ODT_BASE+3328+1], odt_mem[ODT_BASE+3328+0]} = 32'h8001_0300;
       {odt_mem[ODT_BASE+3328+8], odt_mem[ODT_BASE+3328+7]} = 16'h0040;
-      {odt_mem[ODT_BASE+3328+13], odt_mem[ODT_BASE+3328+12]} = 16'h000C;  // Load+Store
+      {odt_mem[ODT_BASE+3328+13], odt_mem[ODT_BASE+3328+12]} = 16'h100C;  // Load+Store+NMC
       odt_mem[ODT_BASE+3328+14] = 8'h00;                    // generation 0
       odt_mem[ODT_BASE+3328+17] = 8'h01;                    // valid   = 1
       odt_mem[ODT_BASE+3328+18] = VEDA_OWNER_UNOWNED;
@@ -2152,7 +2152,7 @@
             //  chosen because every read of them in the corpus is preceded
             //  by a write (grep-verified before choosing), so seeding them
             //  cannot disturb an existing test.
-            $tag = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 12 || #vreg == 13 || #vreg == 14) ? 1'b1 : 1'b0) :
+            $tag = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11 || #vreg == 12 || #vreg == 13 || #vreg == 14) ? 1'b1 : 1'b0) :
                    // Milestone 12: Bind/Bind-NoTrap's own success now
                    // additionally requires owner_ok -- a wrong-owner
                    // live object soft-fails here exactly like an ODT
@@ -2193,6 +2193,32 @@
                    $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_tag : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_tag : |cpu>>1$veda_oda_tag) :
                    $csealentry_wr_en ? |cpu>>1$veda_csealentry_ok :
                                        $RETAIN;
+            // RTL-6b seed -- c11 names Object_ID 104, the reset-seeded
+            // {valid, NOT resident} object, with every OTHER field built to
+            // PASS: generation 0 matches the entry, unsealed, Permit_Load |
+            // Permit_Store matching the entry's own Perms, Offset 0 and
+            // Length 0x40 so an 8-byte access is comfortably in bounds.
+            //
+            // That construction is the whole point. Sail raises
+            // RESIDENCY_FAULT only for an access that would OTHERWISE HAVE
+            // SUCCEEDED, so a fixture that fails any earlier check would
+            // report that earlier cause and prove nothing about residency's
+            // position at the end of the chain. Every field here is chosen
+            // to make residency the only remaining objection.
+            //
+            // WHY A SEED, and this is a real architectural limitation
+            // rather than a testing shortcut: the dereference-side term is
+            // UNREACHABLE THROUGH THE ISA. Page-out is the only producer of
+            // {valid, non-resident} and it bumps generation by design, so
+            // any capability held across it fails the generation check
+            // (0x02) before residency is ever consulted -- and re-Binding
+            // afterwards is refused by the bind-side gate. The two designs
+            // agree on every reachable input; they differ only here.
+            //
+            // c11 was chosen because both tests that use it (m23_scheduler,
+            // ssc_cross_thread) BIND it before any read, so no test depends
+            // on its reset value. Verified by reading them, not assumed.
+            //
             // RTL-5 (R10) seed. c12/c13 name region 2 (rt_valid=1,
             // resident=0 -- a paged-out domain); c14 names region 3
             // (rt_valid=0, resident=1 -- an unconfigured slot whose
@@ -2205,7 +2231,8 @@
             // crossing gate reads -- the local half is never looked up,
             // because the gate fires before any ODT access.
             $object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ?
-                                 ((#vreg == 12) ? 44'd33554452 :
+                                 ((#vreg == 11) ? 44'd104 :
+                                  (#vreg == 12) ? 44'd33554452 :
                                   (#vreg == 13) ? 44'd33554453 :
                                   (#vreg == 14) ? 44'd50331670 : 44'b0) :
                                $bind_wr_en       ? |cpu>>1$veda_object_id :
@@ -2226,7 +2253,7 @@
                                $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_object_id : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_object_id : |cpu>>1$veda_oda_object_id) :
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
                                                                     $RETAIN;
-            $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? 56'b0 :
+            $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 56'h8001_0300 : 56'b0) :
                           $bind_wr_en       ? |cpu>>1$veda_odt_base :
                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_base :
                           $oca_wr_en        ? |cpu>>1$veda_rs1cap_base :
@@ -2238,7 +2265,7 @@
                           $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_base : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_base : |cpu>>1$veda_oda_base) :
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
                                               $RETAIN;
-            $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? 40'b0 :
+            $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 40'h40 : 40'b0) :
                             $bind_wr_en       ? |cpu>>1$veda_odt_length :
                             ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_length :
                             $oca_wr_en        ? |cpu>>1$veda_rs1cap_length :
@@ -2290,7 +2317,8 @@
             // of OCInvoke's capability checks, so the region gate is
             // provably the FIRST failure -- which is the whole point.
             $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ?
-                             ((#vreg == 12) ? 16'h0402 :
+                             ((#vreg == 11) ? 16'h100C :
+                              (#vreg == 12) ? 16'h0402 :
                               (#vreg == 13) ? 16'h0400 :
                               (#vreg == 14) ? 16'h0002 : 16'b0) :
                            $bind_wr_en ? |cpu>>1$veda_odt_perms :
@@ -2441,11 +2469,35 @@
          //  uniqueness test DEREFERENCES its region-1 capability instead of
          //  merely binding it.
          //
-         //  NO residency gate and NO REGION_FAULT here, deliberately. Sail's
-         //  veda_check_access calls odt_lookup directly with no residency
-         //  term (veda_ocl_insts.sail:65-71, :238), so the RTL mirrors that
-         //  asymmetry exactly: residency is a BIND-time authority question,
-         //  not a per-dereference one.
+         //  NO REGION_FAULT here, deliberately, and that remains true.
+         //  Region residency is a BIND-time authority question: you resolve
+         //  which domain's table to consult once, when the capability is
+         //  minted, not on every use of it.
+         //
+         //  RTL-6b CORRECTION -- this comment used to extend that claim to
+         //  OBJECT residency as well ("residency is a BIND-time authority
+         //  question, not a per-dereference one"). That is false, and it is
+         //  stated here rather than quietly deleted because the reasoning
+         //  is the interesting part and the next reader will otherwise
+         //  delete the new term below as redundant.
+         //
+         //  The region precedent does not transfer, for one reason: a
+         //  capability caches Base. Region residency cannot change what a
+         //  held capability points AT; object residency can, because paging
+         //  exists precisely to free a frame and give it to someone else.
+         //  A bind-time-only object check would therefore authorise the
+         //  first access and silently permit every later one against a
+         //  frame that is no longer the object's.
+         //
+         //  It is fair to ask whether the term is redundant TODAY, and the
+         //  honest answer is that it is close to it: RTL-6c's page-out is
+         //  the only producer of {valid, non-resident}, and it bumps
+         //  generation, so a stale capability fails on 0x02 first. The term
+         //  is kept anyway. That soundness argument is a property of the
+         //  current producer set, not of the checker, and DESIGN_02 still
+         //  has `cow` and `backing` to add. A checker that is correct only
+         //  because of what no other instruction happens to do yet is one
+         //  edit away from being wrong, with nothing to catch it.
          $veda_check_region[19:0] = $veda_rs1cap_object_id[43:24];
          $veda_check_local[23:0]  = $veda_rs1cap_object_id[23:0];
          $veda_check_intra_region = ($veda_check_region == $veda_current_region);
@@ -2495,14 +2547,30 @@
          $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[43:8]);
          $veda_check_odt_valid      = $veda_check_idx_ok && odt_mem[$veda_check_odt_addr+17][0] && $veda_check_odt_id_match;
          $veda_gen_stale = (!$veda_check_odt_valid) || ($veda_check_odt_gen != $veda_rs1cap_reserved);
+         // RTL-6b: the dereference-side object residency term.
+         //
+         // READ FROM $veda_check_odt_addr, NEVER $veda_odt_addr. Both are
+         // [31:0], both index odt_mem, both are in scope right here, and
+         // both are named $veda_*odt_addr. Substituting one for the other
+         // compiles, elaborates and simulates -- and keys the residency
+         // decision off whatever Object_ID the current GPR rs1 happens to
+         // hold rather than the one the capability was bound to.
+         //
+         // NOT folded into $veda_gen_stale, though that would be one edit
+         // instead of fourteen. $veda_gen_stale carries cause 0x02, so
+         // folding would report "stale generation" for a paged-out object:
+         // a permanent verdict for a serviceable condition, which is the
+         // same error the bind-side ordering exists to avoid.
+         $veda_check_odt_resident = odt_mem[$veda_check_odt_addr+ODT_OFF_RESIDENT][0];
+         $veda_deref_nonresident  = !$veda_check_odt_resident;
 
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
          $veda_perm_load_ok  = $veda_rs1cap_perms[2];
          $veda_perm_store_ok = $veda_rs1cap_perms[3];
          $veda_bounds_ok     = (($rs2_data + 64'd8) <= {24'b0, $veda_rs1cap_length});
 
-         $veda_ocl_violation = $is_veda_ocl && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_bounds_ok);
-         $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_bounds_ok);
+         $veda_ocl_violation = $is_veda_ocl && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_bounds_ok || $veda_deref_nonresident);
+         $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_bounds_ok || $veda_deref_nonresident);
          // $veda_violation itself is combined further below, once
          // NMC_ADD/Veda-Atomic's own violation signals are also computed
          // (kept textually after the checks they depend on, matching this
@@ -2540,8 +2608,8 @@
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.
          $veda_capmem_misaligned = $veda_real_addr[4:0] != 5'b0;
-         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned);
-         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned);
+         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
+         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
 
          // Tag-store granule index: $veda_real_addr is absolute
          // (ELFMEM_BASE-relative), tag_mem[] is declared 0-based
@@ -3213,8 +3281,8 @@
          // need to (already xlen-wide).
          $veda_nmc_rd_value[63:0] = $is_veda_nmc_add_w ? {{32{$veda_cap_old_w[31]}}, $veda_cap_old_w} : $veda_cap_old_d;
 
-         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_w);
-         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_d);
+         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_w || $veda_deref_nonresident);
+         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
 
          // Veda-Atomic ALU: op-select values reuse real RISC-V Zaamo's
          // own encoding (see decode comment above). Signed MIN/MAX use
@@ -3234,7 +3302,7 @@
                                              64'b0;
          // Only consumed by the trailing raw \SV always_ff block below.
          `BOGUS_USE($veda_atomic_result)
-         $veda_atomic_violation = $is_veda_atomic && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d);
+         $veda_atomic_violation = $is_veda_atomic && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
 
          $veda_violation = $veda_ocl_violation || $veda_ocs_violation ||
                            $veda_nmc_add_w_violation || $veda_nmc_add_d_violation ||
@@ -3255,38 +3323,82 @@
          //  unconditional design (see the /vreg comment block below),
          //  not because RTL trap infrastructure was missing until now.
          // ─────────────────────────────────────────────────────────
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6b: RESIDENCY_FAULT (0x0A) enters all seven chains, and
+         //  doing so required RESTRUCTURING them rather than appending an
+         //  arm. This is the single most error-prone edit in RTL-6 and the
+         //  reason is worth stating once, here, for all seven.
+         //
+         //  Sail places the residency term LAST, after bounds, and says
+         //  why: RESIDENCY_FAULT is raised only for an access that would
+         //  otherwise have SUCCEEDED. That is an information-flow property,
+         //  not a stylistic one. Reporting 0x0A for an access that was
+         //  going to fail anyway invites a pager to fetch an object to
+         //  service a request that will be refused on arrival -- and lets
+         //  an attacker drive unbounded paging with deliberately
+         //  out-of-bounds offsets.
+         //
+         //  But in these chains BOUNDS WAS NEVER AN EXPLICIT TEST. The
+         //  trailing 5'h01 was a fall-through default: reached when the
+         //  violation fired and no earlier arm matched, which could only
+         //  mean bounds. Adding residency to the violation OR breaks that
+         //  reasoning -- the default is now reachable two ways.
+         //
+         //  So each chain gains an explicit `!<bounds> ? 5'h01 :` and
+         //  residency becomes the new default. Appending `? 5'h0A` after
+         //  the old default instead would have been unreachable dead code;
+         //  inserting it before would have reported 0x0A for every
+         //  out-of-bounds access. Both compile clean.
+         //
+         //  Each chain must name ITS OWN bounds signal -- there are four
+         //  ($veda_bounds_ok, $veda_oclc_bounds_ok, $veda_nmc_bounds_ok_w,
+         //  $veda_nmc_bounds_ok_d) and they are not interchangeable; each
+         //  is paired here with the one its own violation expression uses.
+         //
+         //  The 0x08 capability-misalignment arm in the OCL.C/OCS.C chains
+         //  has no Sail counterpart, so its position relative to 0x0A was a
+         //  decision rather than a transcription: it stays AHEAD, on the
+         //  same principle -- a misaligned access would not have succeeded
+         //  either, so residency is not the useful thing to report.
+         // ─────────────────────────────────────────────────────────
          $veda_ocl_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
-                                                      5'h01;
+            !$veda_bounds_ok                       ? 5'h01 :
+                                                      5'h0A;
          $veda_ocs_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_store_ok                   ? 5'h13 :
-                                                      5'h01;
+            !$veda_bounds_ok                       ? 5'h01 :
+                                                      5'h0A;
          $veda_oclc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
             $veda_capmem_misaligned                ? 5'h08 :
-                                                      5'h01;
+            !$veda_oclc_bounds_ok                  ? 5'h01 :
+                                                      5'h0A;
          $veda_ocsc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_store_ok                   ? 5'h13 :
             $veda_capmem_misaligned                ? 5'h08 :
-                                                      5'h01;
+            !$veda_oclc_bounds_ok                  ? 5'h01 :
+                                                      5'h0A;
          $veda_nmc_add_w_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
-                                                      5'h01;
+            !$veda_nmc_bounds_ok_w                 ? 5'h01 :
+                                                      5'h0A;
          $veda_nmc_add_d_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
-                                                      5'h01;
+            !$veda_nmc_bounds_ok_d                 ? 5'h01 :
+                                                      5'h0A;
          // Atomic reuses veda_check_access with need_load=need_store=
          // true -- Sail checks Permit_Load before Permit_Store in that
          // case (veda_ocl_insts.sail's own if-else chain), so a missing
@@ -3297,7 +3409,8 @@
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
             !$veda_perm_store_ok                   ? 5'h13 :
-                                                      5'h01;
+            !$veda_nmc_bounds_ok_d                 ? 5'h01 :
+                                                      5'h0A;
 
          // One combined trap-taken signal + cause mux across every real
          // hard-trapping family. cap_idx is NOT muxed per-family -- all

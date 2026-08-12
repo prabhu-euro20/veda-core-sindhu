@@ -395,6 +395,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_residency_order_neg.vvp" "$SIM/veda_core.
 echo "==> Simulating (RTL-6 residency cause ordering)"
 vvp "$SIM/sim_residency_order_neg.vvp" +elf_hex="$SIM/veda_smoke_residency_order_neg.hex"
 
+echo "==> RTL-6b: Compiling (dereference-side residency, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_residency_deref_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_residency_deref_neg.sv"
+echo "==> Simulating (RTL-6b dereference-side residency)"
+vvp "$SIM/sim_residency_deref_neg.vvp" +elf_hex="$SIM/veda_smoke_residency_deref_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"
