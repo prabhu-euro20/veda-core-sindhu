@@ -400,6 +400,16 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_residency_deref_neg.vvp" "$SIM/veda_core.
 echo "==> Simulating (RTL-6b dereference-side residency)"
 vvp "$SIM/sim_residency_deref_neg.vvp" +elf_hex="$SIM/veda_smoke_residency_deref_neg.hex"
 
+echo "==> RTL-6c: Compiling (page-out/page-in cycle + preservation)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_paging.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_paging.sv"
+echo "==> Simulating (RTL-6c paging cycle)"
+vvp "$SIM/sim_paging.vvp" +elf_hex="$SIM/veda_smoke_paging.hex"
+
+echo "==> RTL-6c: Compiling (paging refusals, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_paging_refusals_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_paging_refusals_neg.sv"
+echo "==> Simulating (RTL-6c paging refusals)"
+vvp "$SIM/sim_paging_refusals_neg.vvp" +elf_hex="$SIM/veda_smoke_paging_refusals_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"

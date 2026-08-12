@@ -497,6 +497,62 @@
       odt_mem[ODT_BASE+16640+23] = 8'h00;  // Object_ID[39:32]
       odt_mem[ODT_BASE+16640+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
       odt_mem[ODT_BASE+16640+ODT_OFF_RESIDENT] = 8'h00;     // NOT resident
+      // ────────────────────────────────────────────────────────────────
+      //  RTL-6c PAGING FIXTURES. `generation` is architecturally
+      //  UNREADABLE by design -- there is no CGet for it -- so the only
+      //  way to observe it is indirectly, through the saturation refusal.
+      //  Both fixtures below exist to make that observation possible, and
+      //  their DISTANCE from the ceiling is the load-bearing detail.
+      //
+      //  Object_ID=106 -> entry 106 -> byte offset 3392. generation
+      //  0xFFFFFE, ONE step below the ceiling. Page-out bumps it to
+      //  0xFFFFFF (allowed), and the NEXT page-out must refuse.
+      {odt_mem[ODT_BASE+3392+3], odt_mem[ODT_BASE+3392+2], odt_mem[ODT_BASE+3392+1], odt_mem[ODT_BASE+3392+0]} = 32'h8001_0500;
+      {odt_mem[ODT_BASE+3392+8], odt_mem[ODT_BASE+3392+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+3392+13], odt_mem[ODT_BASE+3392+12]} = 16'h000C;
+      odt_mem[ODT_BASE+3392+14] = 8'hFE;   // generation = 0x00FFFFFE
+      odt_mem[ODT_BASE+3392+15] = 8'hFF;
+      odt_mem[ODT_BASE+3392+16] = 8'hFF;
+      odt_mem[ODT_BASE+3392+17] = 8'h01;
+      odt_mem[ODT_BASE+3392+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+3392+ODT_OFF_RESIDENT] = 8'h01;
+      //  Object_ID=108 -> entry 108 -> byte offset 3456. generation
+      //  0xFFFFFD, TWO steps below the ceiling, and the second step is the
+      //  whole point.
+      //
+      //  A page-in that WRONGLY bumped generation is indistinguishable
+      //  from a correct one at ONE step below: the wrong bump would
+      //  saturate to 0xFFFFFF, which looks exactly like correct
+      //  preservation, because the mutation hides inside the saturation.
+      //  Two steps down the behaviours separate into something countable:
+      //  preserving gives TWO successful page-outs before the refusal
+      //  (FD->FE, FE->FF, refuse), bumping gives ONE (FD->FE, page-in
+      //  bumps to FF, refuse). Counting the refusal boundary is the only
+      //  observable this architecture offers for an unreadable field.
+      {odt_mem[ODT_BASE+3456+3], odt_mem[ODT_BASE+3456+2], odt_mem[ODT_BASE+3456+1], odt_mem[ODT_BASE+3456+0]} = 32'h8001_0600;
+      {odt_mem[ODT_BASE+3456+8], odt_mem[ODT_BASE+3456+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+3456+13], odt_mem[ODT_BASE+3456+12]} = 16'h000C;
+      odt_mem[ODT_BASE+3456+14] = 8'hFD;   // generation = 0x00FFFFFD
+      odt_mem[ODT_BASE+3456+15] = 8'hFF;
+      odt_mem[ODT_BASE+3456+16] = 8'hFF;
+      odt_mem[ODT_BASE+3456+17] = 8'h01;
+      odt_mem[ODT_BASE+3456+18] = VEDA_OWNER_UNOWNED;
+      odt_mem[ODT_BASE+3456+ODT_OFF_RESIDENT] = 8'h01;
+      //  Object_ID=109 -> entry 109 -> byte offset 3488. Live, resident,
+      //  and OWNED BY HART 0x63. Page-out is gated on ODA authority, NOT
+      //  on ownership, so a pager may legitimately evict an object it does
+      //  not own -- which means page-in must PRESERVE owner_hart or any
+      //  hart could claim the object afterwards. That is object theft by
+      //  triggering a page fault: invisible in a single-hart model except
+      //  through Bind's own 0x06 refusal, which is what makes ownership
+      //  observable here at all.
+      {odt_mem[ODT_BASE+3488+3], odt_mem[ODT_BASE+3488+2], odt_mem[ODT_BASE+3488+1], odt_mem[ODT_BASE+3488+0]} = 32'h8001_0700;
+      {odt_mem[ODT_BASE+3488+8], odt_mem[ODT_BASE+3488+7]} = 16'h0040;
+      {odt_mem[ODT_BASE+3488+13], odt_mem[ODT_BASE+3488+12]} = 16'h000C;
+      odt_mem[ODT_BASE+3488+14] = 8'h00;
+      odt_mem[ODT_BASE+3488+17] = 8'h01;
+      odt_mem[ODT_BASE+3488+18] = 8'h63;   // owned by hart 99
+      odt_mem[ODT_BASE+3488+ODT_OFF_RESIDENT] = 8'h01;
    end
 
    // ═══════════════════════════════════════════════════════════════════
@@ -1488,6 +1544,27 @@
          // rs2 = Base directly (no packed descriptor); Length/Perms come
          // from $veda_attr (defined further below), not from rs2.
          $is_veda_odt_populate_fast = $op_is_custom0 && ($funct3 == 3'b000) && ($funct7 == 7'b0000100);
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6c (DESIGN_02 Phase 2, increment 2): the PAGE-OUT /
+         //  PAGE-IN pair. funct7 0b0000101, split on funct3 by operand
+         //  shape exactly as Populate (000) and Destroy (001) already
+         //  split 0b0000011.
+         //
+         //  The slot was verified free INDEPENDENTLY of Sail by
+         //  enumerating every $op_is_custom0 decode in this file: funct7
+         //  0000000 (OCL, OCL.C), 0000001 (OCS, OCS.C), 0000010 (NMC.W/.D),
+         //  0000011 (Populate, Destroy), 0000100 (Populate-Fast). Nothing
+         //  uses 0000101. The one 7'b0000101 literal elsewhere in the file
+         //  is CGetAddr under Custom-2, a different opcode.
+         //
+         //  KNOWN DIVERGENCE, recorded rather than hidden: Sail's page-out
+         //  encoding hardwires the rs2 field to 0b00000, so an encoding
+         //  with rs2 != 0 does not match and Sail raises Illegal. The RTL
+         //  decode idiom tests only opcode/funct3/funct7, so it accepts a
+         //  wider encoding here. That is inherited from ODT-Destroy, which
+         //  has the identical asymmetry, not introduced by this increment.
+         $is_veda_odt_page_out = $op_is_custom0 && ($funct3 == 3'b001) && ($funct7 == 7'b0000101);
+         $is_veda_odt_page_in  = $op_is_custom0 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101);
 
          $op_is_custom1   = ($opcode == 7'b0101011);
          // Op-select (funct7[31:27]) reuses real RISC-V Zaamo's own
@@ -1583,7 +1660,14 @@
          // RT exactly 0 times and a cross-domain bind exactly 1 -- the
          // difference between a single architectural register and a cache.
          $veda_rt_read_en = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind ||
-                             $is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_destroy)
+                             $is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_destroy ||
+                             // RTL-6c: the paging pair resolves through the
+                             // same Region Table, so it must be enumerated
+                             // here too. Purely observational (behind
+                             // BOGUS_USE), which is exactly why omitting it
+                             // would be invisible -- no functional failure,
+                             // just a probe that under-reports.
+                             $is_veda_odt_page_out || $is_veda_odt_page_in)
                             && !$veda_intra_region;
          // Resolve the region's ODT base -- CRBR if intra-domain, else the
          // RT. rt_*[$veda_region[2:0]] truncates to 3 bits, which is safe
@@ -1922,6 +2006,76 @@
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
                                           (!($priv || $veda_oda_authorized) || $veda_odt_retired);
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  && !($priv || $veda_oda_authorized);
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6c: the paging pair's refusal conditions. Follows
+         //  Destroy's authority shape, NOT Populate's -- Sail's gate is
+         //  `cur_privilege == Machine | veda_oda_authorized()` with no
+         //  `retired` term, and a retired slot is not special to paging.
+         //
+         //  PAGE-OUT refuses unless the object is live AND resident AND
+         //  its generation is below the ceiling. The generation term is
+         //  THE SECURITY CORE of this increment, not a bounds check.
+         //  `generation` saturates at 0xFFFFFF rather than wrapping, so at
+         //  the ceiling the bump becomes a silent no-op: page-out would
+         //  clear residency while invalidating NOTHING, and the later
+         //  page-in -- which preserves generation by design -- would
+         //  restore residency at a NEW frame while every outstanding
+         //  capability still matched. Each would then read and write the
+         //  freed frame now owned by another object. A full
+         //  use-after-free, at the exact boundary the pair exists to
+         //  defend. Fail closed: if the invalidation mechanism cannot run,
+         //  the operation depending on it must not proceed.
+         //
+         //  THE RAW COMPARISON IS DELIBERATE. $veda_odtpd_new_gen below
+         //  already saturates-and-freezes, and reusing it here would be
+         //  precisely wrong -- it computes the no-op instead of refusing
+         //  it, and $veda_odtpd_new_retired would additionally retire the
+         //  slot, which Sail's page-out preserves.
+         $veda_odt_page_out_refusal = $is_veda_odt_page_out &&
+                                       (!($priv || $veda_oda_authorized) ||
+                                        !$veda_odt_valid ||
+                                        !$veda_odt_resident ||
+                                        ($veda_odt_gen == 24'hFFFFFF));
+         //  PAGE-IN refuses unless the object is live AND currently paged
+         //  out. The `resident` half is the security-critical one: page-in
+         //  PRESERVES generation, which is what lets a returning object
+         //  keep its capabilities alive. Turned against a LIVE object that
+         //  same property becomes the attack -- an authorized pager could
+         //  repoint a live object's Base at memory of its choosing while
+         //  every outstanding capability kept validating and nothing
+         //  signalled the move. Doing the same through Populate bumps
+         //  generation and makes the relocation loud.
+         $veda_odt_page_in_refusal  = $is_veda_odt_page_in &&
+                                       (!($priv || $veda_oda_authorized) ||
+                                        !$veda_odt_valid ||
+                                        $veda_odt_resident);
+         //  Page-out's generation bump. SATURATING, not a raw +1, and the
+         //  refusal above already makes the saturation unreachable -- so
+         //  this is deliberate defence in depth and the reasoning belongs
+         //  on the record.
+         //
+         //  Mutation testing is what produced this. A mutant replacing
+         //  this expression with the pre-existing saturating
+         //  $veda_odtpd_new_gen SURVIVED, which is expected -- page-out
+         //  requires $veda_odt_valid, so the two agree on every input
+         //  page-out accepts. But examining WHY it survived showed the
+         //  mutant was the better design: a raw +1 WRAPS at the ceiling,
+         //  and a wrapped generation is the ABA use-after-free that
+         //  Milestone 16 introduced saturation to eliminate in the first
+         //  place. Saturation freezes instead, which is detectable and
+         //  inert.
+         //
+         //  So the two mechanisms now fail in the same direction. If the
+         //  refusal above is ever weakened -- and DESIGN_02 still has
+         //  `cow` and `backing` to add -- the worst outcome becomes a
+         //  frozen counter rather than a silently reused one. A safety
+         //  argument that rests on a single gate elsewhere in the file is
+         //  worth one gate's cost here.
+         $veda_pageout_new_gen[23:0] = ($veda_odt_gen == 24'hFFFFFF) ? 24'hFFFFFF
+                                                                     : ($veda_odt_gen + 24'd1);
+         `BOGUS_USE($veda_odt_page_out_refusal)
+         `BOGUS_USE($veda_odt_page_in_refusal)
+         `BOGUS_USE($veda_pageout_new_gen)
 
          // Sail's own real rule: repopulating a still-valid slot bumps
          // generation too, not just Destroy -- a stale capability's
@@ -3494,7 +3648,48 @@
                              $veda_purecap_violation || $veda_csr_escape_violation ||
                              $veda_region_fault ||
                              $veda_residency_fault ||
+                             // RTL-6c: the paging pair's refusals really
+                             // TRAP. See $veda_illegal_instr below for why
+                             // this was a design decision rather than a
+                             // transcription.
+                             $veda_odt_page_out_refusal ||
+                             $veda_odt_page_in_refusal ||
                              $is_ecall;
+         // ─────────────────────────────────────────────────────────
+         //  RTL-6c: a general ILLEGAL-INSTRUCTION umbrella.
+         //
+         //  Until now this core produced mcause 0x02 from exactly ONE
+         //  signal, named by hand in two separate ternaries
+         //  ($veda_csr_escape_violation, at $mcause and $mtval below).
+         //  There was no general mechanism. Sail's page-out and page-in
+         //  refuse via Illegal_Instruction(), so mirroring them was a real
+         //  DESIGN QUESTION, not transcription, and it is recorded here
+         //  because the alternative was available and defensible.
+         //
+         //  THE ALTERNATIVE, and why it was rejected. Populate and Destroy
+         //  already have a refusal convention in this file: the write is
+         //  suppressed and nothing else happens. PC advances, rd keeps its
+         //  old value, mcause is untouched. Inheriting that floor would
+         //  have been consistent and cost nothing, and the saturation
+         //  refusal's MEMORY-level safety would still hold -- no write
+         //  means no corruption.
+         //
+         //  But it would make the refusal UNOBSERVABLE. A refused page-out
+         //  would be architecturally indistinguishable from a successful
+         //  one, so a pager could not tell that eviction failed and would
+         //  believe it had freed a frame it had not. And the value of this
+         //  pair concentrates in what it REFUSES -- the Sail-side mutation
+         //  testing made that concrete: of six mutants, the four that
+         //  survived the first pass were all refusals or preservations.
+         //  A refusal software cannot see is half a feature.
+         //
+         //  So the existing single-purpose mechanism is generalized rather
+         //  than duplicated. Adding a third hand-named signal to two
+         //  ternaries would have worked and would have been the fourth
+         //  place to forget next time.
+         $veda_illegal_instr = $veda_csr_escape_violation ||
+                                $veda_odt_page_out_refusal ||
+                                $veda_odt_page_in_refusal;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
             // ordering is mandatory rather than stylistic. A non-resident
@@ -3684,7 +3879,7 @@
                          // not an invented Veda-specific code, and the
                          // only possible value since this core only
                          // ever runs M-mode.
-                         (>>1$veda_trap_taken) ? (>>1$veda_csr_escape_violation ? 64'h02 :
+                         (>>1$veda_trap_taken) ? (>>1$veda_illegal_instr ? 64'h02 :
                                                    >>1$is_ecall ? 64'h0B : 64'h18) :
                                                   >>1$mcause;
          $mtval[63:0] = $reset ? 64'b0 :
@@ -3724,7 +3919,7 @@
                         // below is built from $veda_trap_cap_idx/_cause,
                         // which ecall never populates, so it needs its
                         // own explicit branch rather than falling through.
-                        (>>1$veda_trap_taken) ? (>>1$veda_csr_escape_violation ? {32'b0, >>1$instr}
+                        (>>1$veda_trap_taken) ? (>>1$veda_illegal_instr ? {32'b0, >>1$instr}
                                                   : >>1$veda_purecap_violation ? {54'b0, 5'b10001, 5'b00111}
                                                   : >>1$veda_pcc_violation ? {54'b0, 5'b10000, 5'b00001}
                                                   : >>1$is_ecall ? 64'b0
@@ -3968,6 +4163,12 @@
                       ($is_veda_odt_populate && !$veda_odt_populate_violation) ||
                       ($is_veda_odt_populate_fast && !$veda_odt_populate_violation) ||
                       ($is_veda_odt_destroy  && !$veda_odt_destroy_violation) ||
+                      // RTL-6c: rd is written only on the SUCCESS path, so
+                      // a refused page operation leaves rd untouched as
+                      // well as leaving the ODT untouched -- the refusal is
+                      // reported through the trap, not through rd.
+                      ($is_veda_odt_page_out && !$veda_odt_page_out_refusal) ||
+                      ($is_veda_odt_page_in  && !$veda_odt_page_in_refusal) ||
                       // RTL Milestone 9: CSRRW/CSRRS always write rd
                       // with the CSR's OLD value, independent of
                       // $veda_trap_taken -- a CSR read/write is never
@@ -4298,7 +4499,23 @@
             // exactly (VEDA_CORE_SPEC.md Section 5.1: "rd unused (written
             // 0 on success)"). Irrelevant when a violation suppresses the
             // write ($reg_write already gates that off above).
-            ($is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_destroy) ? 64'b0 :
+            // RTL-6c: both new instructions do X(rd) = zeros() on success.
+            //
+            // HONEST NOTE, because the first version of this comment was
+            // wrong and asserting it without checking is the failure this
+            // project keeps guarding against. It claimed that omitting the
+            // arm would let rd fall through to a "plausible-looking nonzero
+            // value". It would not: the fall-through is $alu_result, whose
+            // $alu_result64 chain defaults to 64'b0, and a Custom-0 opcode
+            // matches no ALU arm. So rd reads 0 either way, and a mutant
+            // deleting these two decodes from this list is PROVABLY
+            // EQUIVALENT -- confirmed by running it, not by argument.
+            //
+            // The arm stays regardless. The correct value here must be a
+            // stated decision, not an accident of an unrelated default two
+            // thousand lines away that any future ALU change could move.
+            ($is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_destroy ||
+             $is_veda_odt_page_out || $is_veda_odt_page_in) ? 64'b0 :
             // RTL Milestone 9: rd = the CSR's value from BEFORE this
             // write (real CSRRW/CSRRS semantics) -- $csr_rdata is read
             // combinationally in the same cycle the write is computed,
@@ -4744,6 +4961,62 @@
          // Named as a deliberate belt-and-braces write rather than left to
          // look like a line whose absence nobody noticed.
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h00;
+      // ────────────────────────────────────────────────────────────────
+      //  RTL-6c: the paging pair's writes, added as further arms of THIS
+      //  chain rather than a new always_ff. That placement is required,
+      //  not stylistic: page-out writes +14..+16 and +25, the same bytes
+      //  the Destroy arm writes, and page-in writes +0..+6 and +25,
+      //  overlapping the Populate arm. Two always_ff blocks driving the
+      //  same odt_mem byte in one cycle is a race SystemVerilog will not
+      //  diagnose. The if/else-if chain gives mutual exclusion for free.
+      //  (The owner-claim write lives in its own block ONLY because +18 is
+      //  touched by nothing else.)
+      end else if (act4_mode && CPU_is_veda_odt_page_out_a0 && !CPU_veda_odt_page_out_refusal_a0 && CPU_veda_odt_idx_ok_a0) begin
+         // PAGE-OUT writes exactly TWO fields. valid stays 1 -- the object
+         // still EXISTS, which is the whole distinction RESIDENCY_FAULT
+         // exists to express versus OBJECT_NOT_FOUND. Base is left stale
+         // and is unreachable: RTL-6a's bind gate traps before any mode can
+         // mint from it, and RTL-6b's dereference term catches any
+         // capability that already had.
+         odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_pageout_new_gen_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_pageout_new_gen_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_pageout_new_gen_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h00;
+      end else if (act4_mode && CPU_is_veda_odt_page_in_a0 && !CPU_veda_odt_page_in_refusal_a0 && CPU_veda_odt_idx_ok_a0) begin
+         // PAGE-IN writes exactly TWO fields: the new Base and resident.
+         //
+         // WHAT IS ABSENT HERE IS THE SPECIFICATION. generation (+14..+16),
+         // owner_hart (+18), Length (+7..+11), Perms (+12..+13) and retired
+         // (+19) must all carry over, and they do so by NOT being written.
+         // That is a negative specification with no compiler check, and it
+         // is the single strongest reason `resident` was kept byte-aligned
+         // rather than packed into a shared flags byte: as eight
+         // enumerated lines this arm can be audited by eye, whereas a
+         // read-modify-write of a shared byte would hide a preservation bug
+         // completely.
+         //
+         // Preserving generation is the entire reason page-in exists as a
+         // separate instruction: Populate bumps whenever the old entry was
+         // valid, and a paged-out object IS valid, so using Populate here
+         // would invalidate every capability on every page-in and make
+         // demand paging useless. Preserving owner_hart is a multi-hart
+         // property provable only in the negative today -- page-out is
+         // gated on authority, not ownership, so a pager may evict an
+         // object it does not own; if page-in reset owner_hart, any hart
+         // could then claim it. Object theft by triggering a page fault.
+         //
+         // Base takes the WIDE form. Populate-Fast's $rs2_data[55:0], not
+         // plain Populate's packed {24'b0, $rs2_data[63:32]} -- Sail reads
+         // base_gpr64[55..0]. Copying the compact form compiles clean and
+         // stores the wrong half of the register, with +4..+6 zeroed.
+         odt_mem[CPU_veda_odt_addr_a0+0] <= CPU_rs2_data_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+1] <= CPU_rs2_data_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+2] <= CPU_rs2_data_a0[23:16];
+         odt_mem[CPU_veda_odt_addr_a0+3] <= CPU_rs2_data_a0[31:24];
+         odt_mem[CPU_veda_odt_addr_a0+4] <= CPU_rs2_data_a0[39:32];
+         odt_mem[CPU_veda_odt_addr_a0+5] <= CPU_rs2_data_a0[47:40];
+         odt_mem[CPU_veda_odt_addr_a0+6] <= CPU_rs2_data_a0[55:48];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h01;
       end
    end
 
