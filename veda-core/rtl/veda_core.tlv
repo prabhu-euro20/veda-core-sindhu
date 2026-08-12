@@ -213,8 +213,18 @@
       // the gate must fire BEFORE and INSTEAD OF a lookup that would
       // otherwise have succeeded.
       rt_valid[2] = 1'b1;  rt_resident[2] = 1'b0;  rt_odt_base[2] = 32'd512;
-      // Regions 3..7 stay rt_valid = 0; regions >= RT_ENTRIES are out of
-      // window. Both are non-resident, so both REGION_FAULT.
+      // RTL-5 (R10): region 3 is the rt_valid FAIL-CLOSED fixture --
+      // deliberately the contradictory state {rt_valid = 0, resident = 1}:
+      // a slot that was never configured but whose resident bit reads true
+      // (garbage, or a half-torn write). The residency check must consult
+      // rt_valid FIRST and refuse, so a crossing into region 3 REGION_FAULTs
+      // even though its resident bit says otherwise. Without a slot in
+      // exactly this state, dropping the rt_valid conjunct would be an
+      // unobservable mutation -- rt_valid is otherwise write-only in this
+      // file, so nothing else would notice its absence.
+      rt_valid[3] = 1'b0;  rt_resident[3] = 1'b1;  rt_odt_base[3] = 32'd0;
+      // Regions 4..7 stay rt_valid = 0 and non-resident; regions >=
+      // RT_ENTRIES are out of window. All REGION_FAULT.
       // Milestone 1 test scaffold, explicitly temporary -- mirrors Sail
       // Milestone V-A's own veda_test_seed_odt() field-for-field, same
       // real reason: no ODT-Populate instruction exists yet in RTL
@@ -936,6 +946,24 @@
          // $csr_is_veda_* address already decoded above before adopting
          // it.
          $csr_is_veda_mode         = ($csr_addr == 12'h7C5);
+         // RTL-5 (R10): read-only observability for the CRBR and its saved
+         // shadow, mirroring Sail's 0x7C6/0x7C7. The whole reason R10 was a
+         // SILENT escape is that nothing ever observed the current region --
+         // so exposing it is the honest fix for that gap, and it is what
+         // lets a test assert the load / trap-save / mret-restore cycle
+         // directly instead of only inferring it.
+         //
+         // STRICTLY READ-ONLY, and deliberately so: these appear in the
+         // $csr_rdata mux below but get NO arm in any write path. A WRITABLE
+         // CRBR would be a Milestone-19/20-class self-escape -- a live
+         // compartment that can CSRRW its own ODT base re-points its entire
+         // object namespace at another domain's table, which is exactly the
+         // vector $veda_csr_escape_violation exists to close for 0x7C0-0x7C5.
+         // Read access needs no gate, matching this file's established
+         // "capability metadata is always inspectable" principle: code
+         // already knows which domain it is running in.
+         $csr_is_veda_current_region = ($csr_addr == 12'h7C6);
+         $csr_is_veda_saved_region   = ($csr_addr == 12'h7C7);
 
          // MRET: the one, fixed 32-bit encoding (funct12=0b001100000010,
          // rs1=rd=0, funct3=0, opcode=SYSTEM) -- matched as a single
@@ -1881,7 +1909,31 @@
             // capability-derived value.
             $csealentry_wr_en = |cpu>>1$is_veda_csealentry &&
                                 (|cpu>>1$veda_rd_cap == #vreg);
-            $tag = (|cpu$reset || |cpu>>1$reset) ? 1'b0 :
+            // ─────────────────────────────────────────────────────
+            //  RTL-5 (R10) test scaffold, explicitly temporary -- the
+            //  direct mirror of Sail's own CRF seeds (veda_regs.sail's
+            //  wC(Vcapno(10)/(11)/(13)) in veda_test_seed_odt).
+            //
+            //  A region-2 capability CANNOT be built at runtime, and that
+            //  is the mechanism working rather than a test inconvenience:
+            //  Bind is residency-gated, so a paged-out domain's objects
+            //  cannot be bound, and every derivation instruction (OCA,
+            //  CSeal, CSetBounds, CAndPerm, CSealEntry) carries the source
+            //  Object_ID through unchanged. But capabilities MINTED WHILE
+            //  THE REGION WAS RESIDENT can legitimately still be sitting
+            //  in registers when it pages out -- residency is dynamic in
+            //  the real design. These seeds model exactly that legal
+            //  state, the same direct state-injection technique the
+            //  wrong-owner (Object_ID 60) and near-retirement ODT seeds
+            //  above already use for the same reason.
+            //
+            //  c12 = sealed region-2 CODE (Execute|Invoke, otype 0x0042),
+            //  c13 = sealed region-2 DATA (Invoke only, matching otype),
+            //  c14 = region-2 SENTRY (otype 0xFFFE, Execute). c12/c13/c14
+            //  chosen because every read of them in the corpus is preceded
+            //  by a write (grep-verified before choosing), so seeding them
+            //  cannot disturb an existing test.
+            $tag = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 12 || #vreg == 13 || #vreg == 14) ? 1'b1 : 1'b0) :
                    // Milestone 12: Bind/Bind-NoTrap's own success now
                    // additionally requires owner_ok -- a wrong-owner
                    // live object soft-fails here exactly like an ODT
@@ -1922,7 +1974,21 @@
                    $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_tag : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_tag : |cpu>>1$veda_oda_tag) :
                    $csealentry_wr_en ? |cpu>>1$veda_csealentry_ok :
                                        $RETAIN;
-            $object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :
+            // RTL-5 (R10) seed. c12/c13 name region 2 (rt_valid=1,
+            // resident=0 -- a paged-out domain); c14 names region 3
+            // (rt_valid=0, resident=1 -- an unconfigured slot whose
+            // resident bit is garbage-true). The two fixtures test the two
+            // conjuncts of the residency check SEPARATELY: OCInvoke through
+            // c12 must fail on the resident bit, OCReturn through c14 must
+            // fail on rt_valid despite resident being set.
+            // 33554452 = (2<<24)|20, 33554453 = (2<<24)|21,
+            // 50331670 = (3<<24)|22. The region field [43:24] is all the
+            // crossing gate reads -- the local half is never looked up,
+            // because the gate fires before any ODT access.
+            $object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ?
+                                 ((#vreg == 12) ? 44'd33554452 :
+                                  (#vreg == 13) ? 44'd33554453 :
+                                  (#vreg == 14) ? 44'd50331670 : 44'b0) :
                                $bind_wr_en       ? |cpu>>1$veda_object_id :
                                // Rebind success only -- on failure (sealed
                                // rd / ODT miss), Sail's own execute clause
@@ -1998,7 +2064,16 @@
                             $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_offset : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_offset : |cpu>>1$veda_oda_offset) :
                             $csealentry_wr_en ? |cpu>>1$veda_rs1cap_offset :
                                                 $RETAIN;
-            $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'b0 :
+            // RTL-5 (R10) seed: c12 CODE Execute|Invoke (0x0402), c13 DATA
+            // Invoke-only (0x0400, deliberately NON-executable so it passes
+            // OCInvoke's "data capability must not be executable" check),
+            // c14 sentry Execute (0x0002). Together c12/c13 pass all NINE
+            // of OCInvoke's capability checks, so the region gate is
+            // provably the FIRST failure -- which is the whole point.
+            $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ?
+                             ((#vreg == 12) ? 16'h0402 :
+                              (#vreg == 13) ? 16'h0400 :
+                              (#vreg == 14) ? 16'h0002 : 16'b0) :
                            $bind_wr_en ? |cpu>>1$veda_odt_perms :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_perms :
                            $candperm_wr_en ? (|cpu>>1$veda_rs1cap_perms & |cpu>>1$rs2_data[15:0]) :
@@ -2031,7 +2106,13 @@
             // path, matching Sail's own unsealCap() semantics exactly
             // (the entire reason c15/IDC becomes usable again after
             // OCInvoke, not still sealed).
-            $otype[15:0] = (|cpu$reset || |cpu>>1$reset) ? 16'hFFFF :
+            // RTL-5 (R10) seed: c12/c13 share otype 0x0042 (sealed, and
+            // MATCHING, so OCInvoke's otype-equality check passes); c14 is
+            // 0xFFFE, the CSealEntry-minted sentry type OCReturn requires.
+            // 0xFFFF (the default) means UNSEALED.
+            $otype[15:0] = (|cpu$reset || |cpu>>1$reset) ?
+                             ((#vreg == 12 || #vreg == 13) ? 16'h0042 :
+                              (#vreg == 14) ? 16'hFFFE : 16'hFFFF) :
                            $bind_wr_en ? 16'hFFFF :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? 16'hFFFF :
                            $candperm_wr_en ? |cpu>>1$veda_rs1cap_otype :
@@ -2154,6 +2235,32 @@
                                           ($veda_check_region_in_window ? rt_odt_base[$veda_check_region[2:0]] : 32'b0);
          $veda_check_entry_idx[31:0] = $veda_check_region_base + {24'b0, $veda_check_local[7:0]};
          $veda_check_idx_ok = ($veda_check_entry_idx < {16'b0, ODT_ENTRIES[15:0]});
+         // ─────────────────────────────────────────────────────────
+         //  RTL-5 (R10, DESIGN_07 Tier G): the RT-DIRECT residency check
+         //  used ONLY for CRBR loads at domain crossings. Mirrors Sail's
+         //  veda_region_rt_resident (veda_regs.sail:565-569).
+         //
+         //  Deliberately a SEPARATE signal from $veda_region_resident
+         //  above, and deliberately WITHOUT its `$veda_intra_region ?
+         //  1'b1 :` first arm. Two independent reasons, both load-bearing:
+         //
+         //  1. The exemption's soundness is exactly what a validated load
+         //     ESTABLISHES, so a load that consulted it would be circular
+         //     -- a stale current region would validate its own successor,
+         //     which is the R10 escape itself.
+         //  2. $veda_region_resident is keyed off $veda_region, which
+         //     comes from $rs1_data (the GPR Bind operand). A domain
+         //     crossing must take its region from the CAPABILITY, never
+         //     from a GPR -- that is R10's unforgeability clause.
+         //
+         //  rt_valid gains its first-ever consumer here: an unconfigured
+         //  slot must fail CLOSED even if its resident bit reads true.
+         //  The in-window compare uses the 8-bit-extended form;
+         //  RT_ENTRIES[2:0] would be 3'b000 for RT_ENTRIES=8 and make
+         //  every region read out-of-window.
+         $veda_crossing_rt_resident = $veda_check_region_in_window
+                                       && rt_valid[$veda_check_region[2:0]]
+                                       && rt_resident[$veda_check_region[2:0]];
          $veda_check_odt_idx[7:0]   = $veda_check_local[7:0];
          $veda_check_odt_addr[31:0] = ODT_BASE + (($veda_check_idx_ok ? $veda_check_entry_idx : 32'b0)
                                                   * {24'b0, ODT_ENTRY_BYTES[7:0]});
@@ -2484,12 +2591,21 @@
          //  veda_trap(rs1 or rs2, ...) choice.
          // ─────────────────────────────────────────────────────────
          $is_veda_ocinvoke = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010010);
+         // RTL-5 (R10): the region gate joins this OR as the LAST term, so
+         // a capability that fails any earlier check still reports its own
+         // real reason -- mirroring Sail's placement after all nine checks
+         // (veda_cap_insts.sail:489). Because $veda_ocinvoke_violation is
+         // what every commit below is gated on, adding the term here means
+         // a non-resident target domain commits NOTHING: no c15/IDC write,
+         // no PCC narrowing, no SSC clear, no PC redirect.
+         $veda_ocinvoke_region_fault = $is_veda_ocinvoke && !$veda_crossing_rt_resident;
          $veda_ocinvoke_violation = $is_veda_ocinvoke && (
             !$veda_rs1cap_tag || !$veda_cs2_tag ||
             !$veda_sealed || !$veda_cs2_sealed ||
             ($veda_rs1cap_otype != $veda_cs2_otype) ||
             !$veda_rs1cap_perms[10] || !$veda_cs2_perms[10] ||
-            !$veda_rs1cap_perms[1] || $veda_cs2_perms[1]);
+            !$veda_rs1cap_perms[1] || $veda_cs2_perms[1] ||
+            !$veda_crossing_rt_resident);
          $veda_ocinvoke_cause[4:0] =
             !$veda_rs1cap_tag           ? 5'h02 :
             !$veda_cs2_tag              ? 5'h02 :
@@ -2499,6 +2615,12 @@
             !$veda_rs1cap_perms[10]     ? 5'h19 :
             !$veda_cs2_perms[10]        ? 5'h19 :
             !$veda_rs1cap_perms[1]      ? 5'h11 :
+            // RTL-5 (R10): EXPLICIT arm, not the fall-through. This chain's
+            // default is 5'h11, so without naming 0x09 here a region fault
+            // would report PERMIT_EXECUTE_VIOLATION -- a wrong, misleading
+            // cause that no existing test could catch (the corpus never
+            // crosses into a non-resident domain).
+            !$veda_crossing_rt_resident ? 5'h09 :
                                            5'h11; // remaining case: cs2 wrongly executable
          $veda_ocinvoke_cap_idx[3:0] =
             !$veda_rs1cap_tag           ? $veda_ocl_ocs_rs1_cap :
@@ -2509,6 +2631,11 @@
             !$veda_rs1cap_perms[10]     ? $veda_ocl_ocs_rs1_cap :
             !$veda_cs2_perms[10]        ? $veda_cseal_cunseal_rs2_cap :
             !$veda_rs1cap_perms[1]      ? $veda_ocl_ocs_rs1_cap :
+            // RTL-5 (R10): likewise explicit. This chain's default is cs2,
+            // but Sail reports rs1 for the region fault (veda_trap(rs1,
+            // VEDA_CAUSE_REGION_FAULT)) -- the faulting thing is the CODE
+            // capability whose domain is paged out, not the data operand.
+            !$veda_crossing_rt_resident ? $veda_ocl_ocs_rs1_cap :
                                            $veda_cseal_cunseal_rs2_cap;
          // Real jump target: cs1.Base + cs1.Offset (the same real
          // CGetAddr semantics already established) -- CHERI's own real
@@ -2639,14 +2766,29 @@
          //  exactly the single operand OCRETURN has.
          // ─────────────────────────────────────────────────────────
          $is_veda_ocreturn = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010110);
+         // RTL-5 (R10): the return half, and the sharper half of the escape
+         // closure -- the original hole was precisely that OCReturn restored
+         // no region, so a caller resumed holding the callee's domain as
+         // "current" (fault-exempt by construction). The domain being
+         // RETURNED TO is the region field of the SENTRY's own Object_ID:
+         // csealentry carries the source object's Object_ID into the sentry
+         // (the $csealentry_wr_en arm of /vreg's $object_id), so the
+         // caller's domain is named unforgeably at mint time.
+         $veda_ocreturn_region_fault = $is_veda_ocreturn && !$veda_crossing_rt_resident;
          $veda_ocreturn_violation = $is_veda_ocreturn && (
             !$veda_rs1cap_tag || !$veda_sealed ||
             ($veda_rs1cap_otype != 16'hFFFE) ||
-            !$veda_rs1cap_perms[1]);
+            !$veda_rs1cap_perms[1] ||
+            !$veda_crossing_rt_resident);
          $veda_ocreturn_cause[4:0] =
             !$veda_rs1cap_tag                    ? 5'h02 :
             !$veda_sealed                        ? 5'h03 :
             ($veda_rs1cap_otype != 16'hFFFE)     ? 5'h03 :
+            // RTL-5 (R10): explicit arm ahead of the 5'h11 default, same
+            // reason as OCInvoke's. cap_idx needs no new arm here --
+            // OCRETURN's single operand IS $veda_ocl_ocs_rs1_cap, which is
+            // already $veda_trap_cap_idx's default fallback.
+            !$veda_crossing_rt_resident          ? 5'h09 :
                                                     5'h11; // remaining case: cs1 not executable
          $veda_ocreturn_target[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
 
@@ -3083,6 +3225,12 @@
                              $csr_is_veda_mepcc_length ? {24'b0, $veda_mepcc_length} :
                              $csr_is_veda_attr         ? $veda_attr :
                              $csr_is_veda_mode         ? {32'b0, $veda_mode} :
+                             // RTL-5 (R10): read-only. No write arm exists
+                             // anywhere for these two -- a write is silently
+                             // dropped rather than re-pointing a live
+                             // compartment's namespace.
+                             $csr_is_veda_current_region ? {44'b0, $veda_current_region} :
+                             $csr_is_veda_saved_region   ? {44'b0, $veda_saved_region} :
                                               64'b0;
          // CSRRS with rs1=x0 must not write the CSR at all (real
          // RISC-V's own rule, VEDA_CORE... no -- the base Zicsr spec
@@ -3285,35 +3433,85 @@
          //  cache and NOT a TLB: one base, no tags, no fill-on-miss, no
          //  eviction, no access history.
          //
-         //  DELIBERATELY RESET-ONLY THIS INCREMENT -- no OCInvoke arm, no
-         //  OCReturn arm, no CSR. This is a refusal, not an omission, and
-         //  the reason is a security one. DESIGN_08 Section 4 says the CRBR
-         //  is "set explicitly at domain entry" and stops there; Sail writes
-         //  these two registers in exactly ONE place, its reset seed
-         //  (veda_regs.sail:569-570), and has no OCInvoke arm at all. Wiring
-         //  a load at OCInvoke here would therefore be new, formally
-         //  unverified behaviour -- and worse, it would OPEN A HOLE, because
-         //  OCReturn cannot currently undo it: OCReturn's only operand is a
-         //  sentry capability and no saved-caller-region state exists. The
-         //  current region is fault-EXEMPT by construction (the arm above,
-         //  mirroring veda_regs.sail:500), so a caller returning from a
-         //  callee would keep running with the CALLEE's region as "current"
-         //  -- inheriting unchecked, RT-free access to the callee's entire
-         //  object namespace. That is a compartment escape, not a
-         //  performance bug. The full analysis and the fix are written up as
-         //  finding R10 in RTL_MIRROR_04_DESIGN08_REGION_RESULTS.md; the fix
-         //  belongs in Sail first, as every prior increment has.
+         //  RTL-5 (R10, DESIGN_07 Tier G): the CRBR is now genuinely LOADED
+         //  at the two domain crossings. RTL-4 shipped it reset-only as a
+         //  deliberate refusal -- loading it at entry without a matching
+         //  restore is itself a compartment escape, because OCReturn carries
+         //  no saved caller region and the current region is fault-EXEMPT by
+         //  construction, so a caller would resume holding the CALLEE's
+         //  domain and inherit unchecked, RT-free reach into its whole object
+         //  namespace. The Sail fix landed first (fork commit 2fd7070c,
+         //  76/76, 6/6 mutants killed); this mirrors it.
          //
-         //  Coverage is not reduced by holding it here: with the CRBR pinned
-         //  at region 0 / base 0, region-0 binds exercise the fast path,
-         //  region-1 binds exercise the RT read path, and region-2 binds
-         //  exercise REGION_FAULT. The mux SHAPE below is written out so the
-         //  future arms have an obvious, single place to land.
+         //  One rule, two clauses:
+         //    The CRBR is loaded ONLY from Object_ID[43:24] of the code
+         //    capability being entered or returned to, and EVERY load is
+         //    validated through the Region Table -- never through the
+         //    current-region fast-path exemption.
+         //  The first clause makes the source unforgeable (only a
+         //  residency-gated Bind mints an Object_ID; a GPR cannot name a
+         //  domain). The second makes the exemption sound BY CONSTRUCTION:
+         //  the CRBR can only ever come to name a region the RT said was
+         //  resident. Validation lives in $veda_crossing_rt_resident, which
+         //  is folded into each crossing's violation term, so a faulting
+         //  crossing commits NOTHING -- these arms cannot fire.
+         //
+         //  Arm order mirrors $veda_pcc_base exactly: reset, trap, mret
+         //  -restore, OCInvoke, OCReturn, retain.
          //
          //  Units: ENTRY index, matching rt_odt_base and Sail's
-         //  veda_odt_base_of, NOT bytes.
-         $veda_current_region[19:0]    = $reset ? 20'b0 : >>1$veda_current_region;
-         $veda_current_odt_base[31:0]  = $reset ? 32'b0 : >>1$veda_current_odt_base;
+         //  veda_odt_base_of, NOT bytes. Note the deliberate width
+         //  divergence from Sail: Sail's veda_current_odt_base is bits(56)
+         //  because it is a modelled table offset; the RTL holds the same
+         //  quantity in 32 bits to match rt_odt_base[31:0]. Widening it to
+         //  56 "to match Sail", or storing a byte address here, would shift
+         //  every non-zero-region base by 32x -- invisible on region 0,
+         //  whose base is 0, which is precisely the silent-truncation class
+         //  that cost RTL-3 four bugs.
+         $veda_current_region[19:0] = $reset ? 20'b0 :
+                                       (>>1$veda_trap_taken) ? 20'b0 :
+                                       (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region :
+                                       (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_check_region :
+                                       (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_check_region :
+                                                                                                   >>1$veda_current_region;
+         //  The base half comes from the REGION TABLE, never from the
+         //  capability: the capability supplies only the NAME of the domain,
+         //  the always-resident RT supplies its table location. Mirrors
+         //  Sail's veda_crbr_load reading veda_region_table[ru].
+         $veda_current_odt_base[31:0] = $reset ? 32'b0 :
+                                         (>>1$veda_trap_taken) ? rt_odt_base[0] :
+                                         (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region_base :
+                                         (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? rt_odt_base[>>1$veda_check_region[2:0]] :
+                                         (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? rt_odt_base[>>1$veda_check_region[2:0]] :
+                                                                                                     >>1$veda_current_odt_base;
+         //  RTL-5 (R10): the saved-CRBR shadow, the structural twin of
+         //  veda_mepcc_base/_length. Capture is CONDITIONAL on a non-root
+         //  domain being live (region 0 needs no save -- the reset target IS
+         //  region 0, so restoring it would be the identity), which is also
+         //  what protects the saved value from a nested trap: the handler
+         //  runs in region 0, so a second trap captures nothing and cannot
+         //  clobber the first trap's save. Restore is SELF-CONSUMING: the
+         //  mret arm writes the empty sentinel back, so a saved domain is
+         //  never applied to more than one mret.
+         //
+         //  THE SENTINEL IS 20'hFFFFF, NOT 20'b0, and that is load-bearing:
+         //  region 0 is a LEGITIMATE domain (the root every existing test
+         //  runs in), so zero cannot double as "nothing saved" the way
+         //  VEDA_PCC_UNBOUNDED does for mepcc. 0xFFFFF is out-of-window
+         //  (>= RT_ENTRIES), so it can never be a real current region --
+         //  every load is RT-validated and out-of-window regions are never
+         //  resident. Resetting this to 20'b0 instead would make "nothing
+         //  saved" indistinguishable from "region 0 saved", the restore
+         //  would fire on every mret, and on this all-region-0 corpus it
+         //  would look perfectly correct forever.
+         $veda_saved_region[19:0] = $reset ? 20'hFFFFF :
+                                     (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_region :
+                                     (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? 20'hFFFFF :
+                                                                                              >>1$veda_saved_region;
+         $veda_saved_region_base[31:0] = $reset ? 32'b0 :
+                                          (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_odt_base :
+                                          (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? 32'b0 :
+                                                                                                   >>1$veda_saved_region_base;
          $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                    (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :
                                    (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_length :

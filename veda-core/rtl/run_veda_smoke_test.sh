@@ -42,6 +42,15 @@ cat > "$SIM/sandpiper_gen.vh" <<'VHEOF'
 VHEOF
 
 echo "==> Transpiling TL-Verilog -> SystemVerilog (SandPiper cloud service)"
+# RTL-5: delete any previous output FIRST. Exit code 1 from sandpiper-saas
+# means "warnings, proceed", but a transient cloud failure can also exit 1
+# while writing no new veda_core.sv -- in which case every step below would
+# silently run against the PREVIOUS build's SystemVerilog. That is not
+# hypothetical: it contaminated an entire RTL-5 mutation sweep, reporting a
+# mutant as killed when it was really the previous mutant still in place.
+# With the file removed up front, a transpile that produces nothing fails
+# loudly at iverilog instead of measuring the wrong design.
+rm -f "$SIM/veda_core.sv"
 set +e
 sandpiper-saas -i "$STRIPPED" -o veda_core.sv --outdir "$SIM" -p m4out
 sp_status=$?
@@ -49,6 +58,10 @@ set -e
 if [ "$sp_status" -gt 1 ]; then
   echo "SandPiper transpile failed (exit $sp_status)" >&2
   exit "$sp_status"
+fi
+if [ ! -f "$SIM/veda_core.sv" ]; then
+  echo "SandPiper exited $sp_status but produced no veda_core.sv -- refusing to run against stale output" >&2
+  exit 3
 fi
 
 echo "==> Compiling with Icarus Verilog (positive test)"
@@ -361,6 +374,16 @@ echo "==> RTL-4 DESIGN_08: Compiling (REGION_FAULT covers all bind modes, negati
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_region_fault_modes_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_region_fault_modes_neg.sv"
 echo "==> Simulating (RTL-4 region fault, all bind modes)"
 vvp "$SIM/sim_region_fault_modes_neg.vvp" +elf_hex="$SIM/veda_smoke_region_fault_modes_neg.hex"
+
+echo "==> RTL-5 R10: Compiling (CRBR round-trip across invoke/trap/mret/return)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r10_roundtrip.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r10_crbr_roundtrip.sv"
+echo "==> Simulating (RTL-5 R10 CRBR round-trip)"
+vvp "$SIM/sim_r10_roundtrip.vvp" +elf_hex="$SIM/veda_smoke_r10_crbr_roundtrip.hex"
+
+echo "==> RTL-5 R10: Compiling (crossing into a paged-out domain, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r10_fault_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r10_crossing_fault_neg.sv"
+echo "==> Simulating (RTL-5 R10 crossing fault)"
+vvp "$SIM/sim_r10_fault_neg.vvp" +elf_hex="$SIM/veda_smoke_r10_crossing_fault_neg.hex"
 
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
