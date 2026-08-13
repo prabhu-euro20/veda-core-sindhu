@@ -1174,6 +1174,13 @@
          // already knows which domain it is running in.
          $csr_is_veda_current_region = ($csr_addr == 12'h7C6);
          $csr_is_veda_saved_region   = ($csr_addr == 12'h7C7);
+         // R12: read-only trap-nesting status, {poison, depth}. No write
+         // decode anywhere -- software can already forge the saved mepcc
+         // VALUE via 0x7C2/0x7C3, and must not additionally be able to
+         // forge the OCCUPANCY, or the mechanism is defeated by the very
+         // software it constrains. It is also the only channel by which a
+         // handler can learn WHY a return was denied.
+         $csr_is_veda_trap_status    = ($csr_addr == 12'h7C8);
 
          // MRET: the one, fixed 32-bit encoding (funct12=0b001100000010,
          // rs1=rd=0, funct3=0, opcode=SYSTEM) -- matched as a single
@@ -3853,6 +3860,7 @@
                              // compartment's namespace.
                              $csr_is_veda_current_region ? {44'b0, $veda_current_region} :
                              $csr_is_veda_saved_region   ? {44'b0, $veda_saved_region} :
+                             $csr_is_veda_trap_status    ? {55'b0, $veda_trap_poison, $veda_trap_depth} :
                                               64'b0;
          // CSRRS with rs1=x0 must not write the CSR at all (real
          // RISC-V's own rule, VEDA_CORE... no -- the base Zicsr spec
@@ -4043,7 +4051,16 @@
          // test property); (5) retain.
          $veda_pcc_base[55:0] = $reset ? 56'b0 :
                                  (>>1$veda_trap_taken) ? 56'b0 :
-                                 (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_base :
+                                 // RTL-8 (R12): occupancy is out of band now. depth==1 means this is
+                                 // the OUTERMOST unwind, the one that owns the saved frame.
+                                 (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_base :
+                                 // Poisoned outermost unwind: DENY. A zero-length PCC faults on the
+                                 // very next fetch -- loud, and incapable of granting anything.
+                                 (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 56'b0 :
+                                 // An INNER level's context was the reset context by construction, so
+                                 // it is reconstructed rather than stored -- which is what makes one
+                                 // slot plus a counter lossless here instead of an approximation.
+                                 (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 56'b0 : 56'b0) :
                                  (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$csr_write_en && >>1$csr_is_veda_pcc_base) ? >>1$csr_wdata[55:0] :
@@ -4136,7 +4153,16 @@
                                                                                                    >>1$veda_saved_region_base;
          $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                    (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :
-                                   (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_mepcc_length :
+                                   // RTL-8 (R12): occupancy is out of band now. depth==1 means this is
+                                   // the OUTERMOST unwind, the one that owns the saved frame.
+                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_length :
+                                   // Poisoned outermost unwind: DENY. A zero-length PCC faults on the
+                                   // very next fetch -- loud, and incapable of granting anything.
+                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 40'b0 :
+                                   // An INNER level's context was the reset context by construction, so
+                                   // it is reconstructed rather than stored -- which is what makes one
+                                   // slot plus a counter lossless here instead of an approximation.
+                                   (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 40'b0 : 40'hFFFFFFFFFF) :
                                    (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$csr_write_en && >>1$csr_is_veda_pcc_length) ? >>1$csr_wdata[39:0] :
@@ -4157,14 +4183,58 @@
          // {0, UNBOUNDED} so a stale value can never be restored twice --
          // the identical self-consuming property the Sail side's own design
          // already proved necessary for the same nested-trap hazard class.
+         // ═════════════════════════════════════════════════════════
+         //  RTL-8 (R12, DESIGN_07 Tier H): OUT-OF-BAND TRAP NESTING.
+         //
+         //  This file held the OPPOSITE half of R12 from the Sail model, and the
+         //  divergence was caused by a COMMENT. veda_regs.sail stated that
+         //  veda_pcc_save_and_reset's capture "is itself conditional". It was not
+         //  -- that function had no guard at all. This file then guarded ITS
+         //  capture, citing that comment as justification. So the RTL implemented
+         //  what the comment SAID while Sail did what its code DID: Sail clobbered
+         //  the outer save and resumed UNBOUNDED, while this file kept the save
+         //  but let the INNER mret consume it, narrowing the handler mid-flight.
+         //
+         //  Recorded because every cross-layer mirror here is written by reading
+         //  the other layer's comments. Code says WHAT, comments say WHY -- so a
+         //  comment that misdescribes its own function becomes a specification bug
+         //  that propagates. Verify against the other layer's CODE.
+         //
+         //  Root cause on both sides was the in-band sentinel: 40'hFFFFFFFFFF was
+         //  made to mean both "this compartment has no bounds" and "nothing was
+         //  saved". An object may legitimately have that Length, so the collision
+         //  is reachable, not theoretical.
+         //
+         //  Depth decrements on mret AND on a successful OCRETURN. That second
+         //  exit has no RISC-V counterpart: the trusted switcher leaves a handler
+         //  by OCRETURN and cannot do otherwise, since narrowing PCC with csrw and
+         //  then falling through to a separate mret requires fetching that mret,
+         //  by then outside the narrowed bounds. OCRETURN installs PCC from its
+         //  own operand, so a saved frame is superseded -- abandoned, not restored.
+         $veda_trap_depth[7:0] = $reset ? 8'b0 :
+                                  (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'hFF)) ? (>>1$veda_trap_depth + 8'b1) :
+                                  ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth != 8'b0)) ? (>>1$veda_trap_depth - 8'b1) :
+                                                                                            >>1$veda_trap_depth;
+         //  Poison marks a chain that cannot be reconstructed: a handler that
+         //  narrowed ITSELF -- via OCInvoke, or the PCC CSRs, writable precisely
+         //  while unbounded -- and then faulted. Reconstructing the reset context
+         //  there would hand unbounded authority to a level that was narrowed,
+         //  which is R12 again one level up. Saturation poisons too: at the ceiling
+         //  the chain stops being countable, so it stops being reconstructible.
+         $veda_trap_poison = $reset ? 1'b0 :
+                              (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'b0) &&
+                               ((>>1$veda_pcc_length != 40'hFFFFFFFFFF) || (>>1$veda_current_region != 20'b0))) ? 1'b1 :
+                              (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'hFF)) ? 1'b1 :
+                              ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
+                                                                                        >>1$veda_trap_poison;
          $veda_mepcc_base[55:0] = $reset ? 56'b0 :
-                                   (>>1$veda_trap_taken && (>>1$veda_pcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_pcc_base :
-                                   (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? 56'b0 :
+                                   (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_base :
+                                   ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
                                    (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base) ? >>1$csr_wdata[55:0] :
                                                                                        >>1$veda_mepcc_base;
          $veda_mepcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
-                                     (>>1$veda_trap_taken && (>>1$veda_pcc_length != 40'hFFFFFFFFFF)) ? >>1$veda_pcc_length :
-                                     (>>1$is_mret && (>>1$veda_mepcc_length != 40'hFFFFFFFFFF)) ? 40'hFFFFFFFFFF :
+                                     (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_length :
+                                     ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
                                      (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
          // RTL Milestone 18: plain read/write CSR, no other write source

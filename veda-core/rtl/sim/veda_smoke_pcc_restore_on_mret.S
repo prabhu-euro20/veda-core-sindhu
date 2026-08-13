@@ -247,8 +247,24 @@ h_phase1_escape:
     mret
 
 h_phase2:
-    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
-    csrw 0x7c3, t3                        # explicit override: clear mepcc_length
+    # R12 REWRITE. Software may still influence WHAT is restored -- it may
+    # not influence WHETHER a restore happens.
+    #
+    # This handler used to write only mepcc_length, relying on the in-band
+    # sentinel to SUPPRESS the restore entirely, so that PCC stayed at the
+    # trap-reset {0, UNBOUNDED}. That mechanism is gone: occupancy is now
+    # carried out of band by the trap depth, so the restore fires whenever a
+    # frame is genuinely owed, regardless of any value software writes.
+    #
+    # The intent -- resume unbounded -- is still fully expressible, and now
+    # it is expressed honestly: write BOTH halves of the frame that is going
+    # to be restored. This grants software no authority it did not already
+    # have, since anything able to write 0x7C2/0x7C3 while unbounded can
+    # already write PCC directly via 0x7C0/0x7C1.
+    li   t3, 0
+    csrw 0x7c2, t3                        # mepcc_base  := 0
+    li   t3, 0xFFFFFFFFFF                 # 40-bit Length; UNBOUNDED is 0xFFFFFFFFFF
+    csrw 0x7c3, t3                        # mepcc_length := UNBOUNDED
     csrr t3, mepc
     addi t3, t3, 4
     csrw mepc, t3
@@ -286,8 +302,11 @@ h_phase3_outer:
     #    mret -- genuine, necessary software cooperation around a
     #    reentrant trap window, the same discipline any real OS kernel
     #    needs for nested-trap safety, not a workaround. --
-    csrw 0x7c2, s0                        # restore mepcc_base (saved by h_phase3_inner)
-    csrw 0x7c3, s1                        # restore mepcc_length
+    # R12: nothing to restore -- h_phase3_inner no longer hides mepcc,
+    # because the hardware now distinguishes an inner unwind from the
+    # outermost one by depth rather than by a value comparison. The outer
+    # frame has simply been sitting untouched across the whole nested
+    # episode, which is the property this phase now asserts.
     li   x30, 3                           # restore phase marker for correctness/clarity (not re-checked)
     addi t3, s2, 4                        # the OUTER's own real resume address (s2, not a re-read CSR)
     csrw mepc, t3
@@ -303,10 +322,27 @@ h_phase3_inner:
     #    still-narrow bounds). h_phase3_outer's own continuation above
     #    restores mepcc from s0/s1 before its own, real, intended
     #    restore-triggering mret. --
-    csrr s0, 0x7c2
-    csrr s1, 0x7c3
-    li   t3, 0xFFFFFFFFFF                 # RTL-3: 40-bit Length -- UNBOUNDED is 0xFFFFFFFFFF
-    csrw 0x7c3, t3
+    # R12 REWRITE -- the hide/clear/restore dance is DELETED.
+    #
+    # This handler used to save mepcc into s0/s1 and clear it, so that its
+    # own mret would not consume the OUTER's saved frame. That was correct
+    # software cooperation around a real hardware limitation, and the
+    # comment above states the limitation exactly: mepcc alone "cannot by
+    # itself distinguish the OUTER's own eventual real mret from the
+    # INNER's own mret -- both see the identical mepcc_length != UNBOUNDED
+    # condition."
+    #
+    # R12 removes that limitation IN HARDWARE. Occupancy is carried out of
+    # band by the trap depth, so an inner unwind and the outermost unwind
+    # are now distinguishable by construction: the inner one reconstructs
+    # the reset context and leaves the saved frame alone, and only the
+    # outermost one consumes it.
+    #
+    # Deleting this is the point of the rewrite, not a simplification of
+    # it. Leaving software to hide a frame the hardware can now track would
+    # keep a security-relevant invariant resting on handler discipline --
+    # exactly what a hardware-native design exists to avoid. If this dance
+    # is ever needed again, the depth mechanism has regressed.
     csrr t3, mepc
     addi t3, t3, 4
     csrw mepc, t3
