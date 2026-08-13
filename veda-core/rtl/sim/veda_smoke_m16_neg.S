@@ -12,6 +12,14 @@ _start:
     // slot is now permanently retired instead: the re-populate attempt
     // is silently refused, and the stale capability's own later use
     // correctly hard-traps.
+    // RTL-11 (R14): the retired-slot refusal now TRAPS, so the handler has to
+    // be installed BEFORE it rather than just before the stale access below.
+    // Two traps are expected now, not one, and the handler tells them apart:
+    // the first is the refused re-populate (resume past it), the second is the
+    // stale access this test has always been about.
+    la   t0, trap_handler
+    csrw mtvec, t0
+    li   x20, 0
     la   x5, array_a
     slli x5, x5, 32
     li   x9, 0x00080004
@@ -43,12 +51,15 @@ destroy_loop:
     mv   x2, x5
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2 (must be REFUSED)
 
-    la   t0, trap_handler
-    csrw mtvec, t0
 
     // Use the ORIGINAL, stale c0 directly. Fixed: since the re-populate
     // above was refused, the slot stayed invalid, so this must
     // hard-trap (a real OCL.D Tag/generation violation), not succeed.
+    li   x18, 1
+    bne  x20, x18, 1f                      // the refused re-populate trapped
+    li   x18, 2
+    bne  x21, x18, 1f                      // mcause 2 = illegal instruction
+    li   x23, 0x600D
     li   x2, 0
 fault_instr:
     .insn r 0x0b, 0x3, 0x00, x8, x0, x2  # ocl.d x8, x2, c0
@@ -56,6 +67,16 @@ fault_instr:
     j    done
 
 trap_handler:
+    addi x20, x20, 1
+    csrr x21, mcause
+    li   x18, 2
+    beq  x20, x18, stale_access_trap
+    // trap 1: the refused re-populate. Resume just past it.
+    csrr x17, mepc
+    addi x17, x17, 4
+    csrw mepc, x17
+    mret
+stale_access_trap:
     li   x22, 0x600D         # FIXED: the stale access correctly trapped
 done:
 1:

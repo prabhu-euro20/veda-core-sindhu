@@ -22,7 +22,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (14) begin
+    repeat (90) begin
       @(posedge clk);
       #1;
       $display("cyc=%0d pc=0x%0h instr=0x%08h | priv=%0b is_odt_pop=%0b pop_viol=%0b",
@@ -50,10 +50,12 @@ module tb;
     //
     // Correct address for Object_ID=5's valid byte: entry 5 (region 0,
     // local 5), so 5*ODT_ENTRY_BYTES + 17 = 5*32 + 17 = 177.
-    $display("x6(c0 tag)=%0b odt_mem[Object_ID=5]: valid=%0b",
-              dut.CPU_Xreg_val_a0[6], dut.odt_mem[32'h9000_0000+32*5+17][0]);
+    $display("x6(c0 tag)=%0b odt_mem[Object_ID=5]: valid=%0b traps=%0d mcause=0x%0h",
+              dut.CPU_Xreg_val_a0[6], dut.odt_mem[32'h9000_0000+32*5+17][0], dut.CPU_Xreg_val_a0[20], dut.CPU_Xreg_val_a0[21]);
 
     if (dut.CPU_Xreg_val_a0[6] == 64'h0 &&
+        dut.CPU_Xreg_val_a0[20] == 64'h1 &&   // RTL-11 (R14): it TRAPPED, once
+        dut.CPU_Xreg_val_a0[21] == 64'h2 &&   // and the cause is illegal-instruction
         dut.odt_mem[32'h9000_0000+32*5+17][0] == 1'b0) begin
       $display("\n*** TEST PASSED *** (dropped privilege correctly blocked ODT-Populate -- no ODT entry was ever created, confirmed both via odt_mem[] directly and via a subsequent Bind's own Tag=0)");
     end else begin

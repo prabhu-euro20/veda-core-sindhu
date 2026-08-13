@@ -7,6 +7,18 @@ _start:
     # must be suppressed exactly like Milestone 4's own negative test,
     # now via the OR'd authorization check
     # (!$priv && !$veda_oda_authorized) rather than !$priv alone.
+    // RTL-11 (R14): this refusal now TRAPS. It always suppressed the write;
+    // what it never did was SAY SO, and an unprivileged program was told
+    // nothing at all. So a handler is installed here, before the violating
+    // instruction -- this file previously installed none, and relied on
+    // Bind-NoTrap to stay out of the trap path entirely.
+    //
+    // The test's original subject is unchanged and is still checked: the ODT
+    // entry must never have been created. What is added is the other half --
+    // that the refusal was observable.
+    la   x7, trap_handler
+    csrw mtvec, x7
+    li   x20, 0
     .insn r 0x7b, 0x0, 0x00, x0, x0, x0  # veda.droppriv  -- $priv: 1 -> 0, one-way
 
     li   x1, 6                # Object_ID = 6 (never seeded at reset)
@@ -23,5 +35,17 @@ _start:
     # instead, preserving the test's original intent exactly.
     .insn i 0x0b, 0x5, x0, x1, 1  # veda.bind.notrap c0, x1
     .insn r 0x5b, 0x0, 0x03, x6, x0, x0  # cgettag x6, c0     -- expect 0 (Object_ID=6's ODT entry was never populated)
+    j    1f                              # jump PAST the handler -- falling through
+                                         # into it re-executes mret and loops
+
+.balign 4
+trap_handler:
+    addi x20, x20, 1
+    csrr x21, mcause
+    csrr x17, mepc
+    addi x17, x17, 4
+    csrw mepc, x17
+    mret
+
 1:
     j 1b

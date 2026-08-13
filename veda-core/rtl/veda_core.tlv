@@ -2099,8 +2099,12 @@
          //  refusal tells a pager the eviction happened when it did not --
          //  which is worse than either trapping or succeeding, because the
          //  pager then reuses memory it does not own.
-         $veda_executing_pin_refusal = ($is_veda_odt_populate || $is_veda_odt_populate_fast ||
-                                        $is_veda_odt_destroy) && $veda_object_is_executing;
+         // RTL-11 (R14): $veda_executing_pin_refusal used to live here as its
+         // own signal, because Populate's and Destroy's violations refused
+         // SILENTLY and the pin must not be silent. Now that both violations
+         // trap (below), the pin term inside them is carried automatically and
+         // a separate signal would be pure duplication -- two routes computing
+         // the same condition, free to drift apart later.
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
                                           (!($priv || $veda_oda_authorized) || $veda_odt_retired ||
                                            $veda_object_is_executing);
@@ -3828,9 +3832,23 @@
                              // transcription.
                              $veda_odt_page_out_refusal ||
                              $veda_odt_page_in_refusal ||
-                             // RTL-9 (R11(b)): the executing-object pin traps,
-                             // unlike the silent gates it sits beside.
-                             $veda_executing_pin_refusal ||
+                             // RTL-11 (R14, DESIGN_07 Tier H): POPULATE AND DESTROY
+                             // NOW TRAP ON EVERY GATE, as the model always did.
+                             //
+                             // These two refused silently: they suppressed the
+                             // ODT write and the rd write and raised nothing, so
+                             // an unprivileged program could execute a privileged
+                             // instruction and be told nothing. Sail raises
+                             // Illegal_Instruction for all three gates
+                             // (privilege/authority, the executing-object pin,
+                             // and retired), page-out and page-in in this very
+                             // file already trap on the SAME authority gate, and
+                             // RISC-V's own convention for an instruction the
+                             // current privilege may not execute is exactly this
+                             // trap. The silence was never argued for anywhere --
+                             // it was simply what the file did.
+                             $veda_odt_populate_violation ||
+                             $veda_odt_destroy_violation ||
                              $is_ecall;
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: a general ILLEGAL-INSTRUCTION umbrella.
@@ -3867,7 +3885,8 @@
          $veda_illegal_instr = $veda_csr_escape_violation ||
                                 $veda_odt_page_out_refusal ||
                                 $veda_odt_page_in_refusal ||
-                                $veda_executing_pin_refusal;
+                                $veda_odt_populate_violation ||
+                                $veda_odt_destroy_violation;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
             // ordering is mandatory rather than stylistic. A non-resident

@@ -32,7 +32,8 @@ module tb;
 
     $display("stale access after 256 destroys: x22=0x%0h (must be 0x600D)", dut.CPU_Xreg_val_a0[22]);
 
-    if (dut.CPU_Xreg_val_a0[22] == 64'h600D) begin
+    if (dut.CPU_Xreg_val_a0[22] == 64'h600D &&
+        dut.CPU_Xreg_val_a0[23] == 64'h600D) begin
       $display("\n*** TEST PASSED *** (after 256 real Destroy operations wrap the 8-bit generation counter, the slot is now permanently retired -- a re-populate attempt is silently refused, and the original, now-genuinely-stale capability correctly hard-traps instead of successfully dereferencing memory it should have lost access to at the very first Destroy)");
     end else begin
       $display("\n*** TEST FAILED ***");

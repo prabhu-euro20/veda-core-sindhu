@@ -6,6 +6,13 @@
 > Milestone 15's anti-aliasing tag was applied to reads only, so `veda.odt.destroy 288` cleared
 > live object 32's descriptor. Fixed by gating Destroy's ODT write on the tag; suite is now
 > **73/73 smoke, 51/51 ACT4**, both new mutants killed. See DESIGN_07 R13.
+>
+> **Follow-on RTL-11 (R14), same session:** the silent-refusal divergence named in the section
+> below is now closed -- Populate and Destroy trap on every gate, as the model always did, and
+> `$veda_executing_pin_refusal` was deleted as subsumed. Three tests that had grown around the
+> silence now assert the trap as well as the suppression. 73/73, 51/51, 3/3 mutants killed. See
+> DESIGN_07 R14. The section below is kept as written, because it records why the pin was given its
+> own signal at the time.
 
 ## What this closes
 

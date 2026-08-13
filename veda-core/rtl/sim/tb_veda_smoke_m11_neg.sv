@@ -20,15 +20,17 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (15) begin
+    repeat (90) begin
       @(posedge clk);
       #1;
       cyc_cnt = cyc_cnt + 1;
     end
 
-    $display("dropped privilege + unauthorized ODA: c0.tag=x6=0x%0h (must be 0 -- no ODT entry was ever created)", dut.CPU_Xreg_val_a0[6]);
+    $display("dropped privilege + unauthorized ODA: c0.tag=x6=0x%0h (must be 0 -- no ODT entry was ever created) traps=%0d mcause=0x%0h", dut.CPU_Xreg_val_a0[6], dut.CPU_Xreg_val_a0[20], dut.CPU_Xreg_val_a0[21]);
 
-    if (dut.CPU_Xreg_val_a0[6] == 64'h0) begin
+    if (dut.CPU_Xreg_val_a0[6] == 64'h0 &&
+        dut.CPU_Xreg_val_a0[20] == 64'h1 &&   // RTL-11 (R14): it TRAPPED, once
+        dut.CPU_Xreg_val_a0[21] == 64'h2) begin
       $display("\n*** TEST PASSED *** (with BOTH ordinary privilege dropped AND the ODA left unauthorized, ODT-Populate is still correctly blocked -- confirmed via a subsequent Bind's own Tag=0, no ODT entry was ever actually created)");
     end else begin
       $display("\n*** TEST FAILED ***");
