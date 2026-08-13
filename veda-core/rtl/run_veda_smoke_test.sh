@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-12: Compiling (rights attenuation enforced on all store paths)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_perm_enforce_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_perm_enforce_neg.sv"
+echo "==> Simulating (RTL-12 permission enforcement)"
+vvp "$SIM/sim_perm_enforce_neg.vvp" +elf_hex="$SIM/veda_smoke_perm_enforce_neg.hex"
+
 echo "==> RTL-10 (R13): Compiling (aliased Destroy must not clear a foreign slot)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r13_alias_destroy_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r13_alias_destroy_neg.sv"
 echo "==> Simulating (RTL-10 R13 aliased destroy)"

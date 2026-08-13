@@ -2504,7 +2504,18 @@
                                // below except Tag must fall through to
                                // $RETAIN unchanged, not get overwritten.
                                ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_object_id :
-                               ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_object_id :
+                               // RTL-12: $candperm_wr_en was missing here too.
+                               // The comment above this very mux already says
+                               // "every derivation instruction (OCA, CSeal,
+                               // CSetBounds, CAndPerm, CSealEntry) carries the
+                               // source Object_ID through unchanged" -- the
+                               // code did not, so the file contradicted its own
+                               // written intent. An attenuated capability came
+                               // out naming Object_ID 0, and the dereference
+                               // re-check then looked up the wrong slot and
+                               // reported a stale generation (0x02) for what is
+                               // really a lost name.
+                               ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en || $candperm_wr_en) ? |cpu>>1$veda_rs1cap_object_id :
                                $oclc_wr_en       ? |cpu>>1$veda_oclc_unpacked_object_id :
                                // OCInvoke copies cs2's OWN full field set
                                // into c15 (IDC) -- a genuinely different
@@ -2660,7 +2671,25 @@
                              // below) would immediately reject the
                              // freshly-rebound capability as stale.
                              ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_gen :
-                             ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_reserved :
+                             // RTL-12: $candperm_wr_en BELONGS HERE and was
+                             // missing -- a real bug, not a tidy-up. CAndPerm
+                             // carried every other field of cs1 (Base, Length,
+                             // Offset, Perms, otype, tag, Object_ID) and not
+                             // the generation, so the result fell through to
+                             // $RETAIN and kept whatever the destination
+                             // register happened to hold -- 0 for a fresh one.
+                             // Every dereference through an attenuated
+                             // capability then trapped 0x02 (stale generation)
+                             // instead of working.
+                             //
+                             // Invisible until now for a precise reason: the
+                             // two existing CAndPerm tests inspect the result
+                             // with CGetPerm/CGetTag and never ACCESS through
+                             // it, so they exercised attenuation as
+                             // bookkeeping and never as enforcement. A missing
+                             // arm here compiles clean -- $RETAIN is a legal
+                             // default and there is no type checker to object.
+                             ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en || $candperm_wr_en) ? |cpu>>1$veda_rs1cap_reserved :
                              $oclc_wr_en ? |cpu>>1$veda_oclc_unpacked_reserved :
                              $ocinvoke_wr_en ? |cpu>>1$veda_cs2_reserved :
                              $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_reserved : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_reserved : |cpu>>1$veda_oda_reserved) :
