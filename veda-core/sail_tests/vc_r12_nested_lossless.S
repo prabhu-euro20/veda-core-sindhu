@@ -95,7 +95,7 @@ outer_handler:
     j    resume_outer
 
 take_nested:
-    li   x21, 1
+    li   x21, 2
     la   x5, inner_handler
     csrw mtvec, x5
     li   x12, 0
@@ -104,6 +104,29 @@ take_nested:
     csrw mtvec, x5
 
 resume_outer:
+    # THE ASSERTION, made HERE rather than after resuming into the
+    # compartment. Everything the lossless property claims is observable at
+    # this point, and observing it here needs no assumption about the
+    # resume path -- an earlier version asserted after the mret and spent a
+    # long detour on a probe that was reading a register the compartment
+    # never wrote.
+    csrr x18, 0x7C8                        # {poison, depth}
+    csrr x19, 0x7C3                        # veda_mepcc_length
+    li   x9, 1
+    bne  x18, x9, fail                     # depth 1, poison 0 -- the nested
+                                           # level unwound, no poison set
+    li   x9, 0x0100
+    bne  x19, x9, fail                     # THE SAVE SURVIVED THE NESTING.
+                                           # Under R12 this read the
+                                           # UNBOUNDED sentinel: the nested
+                                           # trap had overwritten it, and the
+                                           # restore then read that as
+                                           # "nothing was saved" and resumed
+                                           # the compartment unbounded.
+    li   x9, 2
+    bne  x21, x9, fail                     # both stages really happened
+    RVMODEL_HALT_PASS
+
     addi x28, x28, 4
     csrw mepc, x28
     mret
