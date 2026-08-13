@@ -11,7 +11,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 export PATH="$PATH:$HOME/.local/bin"
-GCC_BIN=/home/prabhu/makerchip/rva23-core/toolchain/riscv-collab-gcc/riscv/bin
+# Prefer THIS line's own toolchain. The rva23-core fallback is a different
+# project's tree that another session actively commits to, so depending on
+# it makes our results depend on a moving target with no signal. Verified
+# byte-identical output from both (same build g6afcc4f6d 16.1.0) at the
+# time this was changed, so the fallback is safe -- but it is a fallback,
+# not the source of truth.
+GCC_BIN="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/toolchain/riscv-collab-gcc/riscv/bin"
+if [ ! -x "$GCC_BIN/riscv64-unknown-elf-gcc" ]; then
+  GCC_BIN=/home/prabhu/makerchip/rva23-core/toolchain/riscv-collab-gcc/riscv/bin
+  echo "warning: using the rva23-core toolchain; run ./toolchain/setup.sh gnu-toolchain to make this line self-contained" >&2
+fi
 OBJCOPY="$GCC_BIN/riscv64-unknown-elf-objcopy"
 READELF="$GCC_BIN/riscv64-unknown-elf-readelf"
 # NOTE: elfs/rv64i/I/*.elf (NOT build/rv64i/I/*.sig.elf) is the real

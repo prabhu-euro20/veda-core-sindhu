@@ -18,6 +18,19 @@ SIM=$REPO_ROOT/toolchain/sail-riscv/build/c_emulator/sail_riscv_sim
 CFG=./veda_test_sail.json
 LDS=./veda_selfcheck.ld
 
+# A missing toolchain used to surface as "0/86 passed" -- every test
+# reporting ASM-FAIL, which reads as a catastrophic regression rather than
+# an absent prerequisite. That cost a real debugging cycle. Fail loudly and
+# say exactly what to run instead.
+for tool in "$AS" "$LD" "$SIM"; do
+  if [ ! -x "$tool" ]; then
+    echo "FATAL: required tool not found: $tool" >&2
+    echo "  The Veda-Core line is self-contained: run ./toolchain/setup.sh gnu-toolchain" >&2
+    echo "  (toolchain/sail-riscv is a deliberate symlink to the Sail fork -- see setup.sh)" >&2
+    exit 2
+  fi
+done
+
 pass_count=0
 fail_count=0
 declare -a results
