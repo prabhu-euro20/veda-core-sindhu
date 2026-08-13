@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-8 (R12): Compiling (poison + deny on an unreconstructible unwind)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r12_poison.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r12_poison.sv"
+echo "==> Simulating (RTL-8 R12 poison/deny)"
+vvp "$SIM/sim_r12_poison.vvp" +elf_hex="$SIM/veda_smoke_r12_poison.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"
