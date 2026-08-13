@@ -191,6 +191,11 @@
    // Sentinel for "no live owner yet" -- matches Sail's own
    // VEDA_OWNER_UNOWNED (veda_types.sail) byte-for-byte, not re-chosen.
    localparam bit [7:0] VEDA_OWNER_UNOWNED = 8'hFF;
+   // RTL-9 (R11(b), DESIGN_07 Tier H): "this belongs to no object". Out of
+   // band by construction -- its region field (bits 43:24) is all ones, and
+   // no region table window can resolve 20'hFFFFF, so it cannot collide
+   // with a real Object_ID. Same discipline as Sail's VEDA_REGION_NONE.
+   localparam bit [43:0] VEDA_OBJECT_NONE = 44'hFFFFFFFFFFF;
    logic [7:0] odt_mem [ODT_BASE : ODT_BASE + (ODT_ENTRIES * ODT_ENTRY_BYTES) - 1];
    // ───────────────────────────────────────────────────────────────────
    //  RTL-4: the Region Table (RT). DESIGN_08's outer level -- flat,
@@ -2010,9 +2015,98 @@
          // VEDA_ODT_POPULATE_FAST (identical privilege/retired gate on
          // both, mirroring Sail's own two execute clauses, which each
          // repeat the identical check rather than sharing a helper).
+         // ─────────────────────────────────────────────────────────
+         //  RTL-9 (R11(b), DESIGN_07 Tier H): YOU MAY NOT EVICT THE CODE
+         //  YOU ARE RUNNING.
+         //
+         //  Instruction fetch compares the PC against PCC's CACHED Base and
+         //  Length and never re-reads the ODT, so the crossing checks of
+         //  RTL-7 cannot help once execution is already inside an object.
+         //  PCC now carries the object's NAME, and the entry-changing
+         //  instructions refuse on it -- one 44-bit compare, on a cold path,
+         //  instead of a table read on every fetch.
+         //
+         //  THE SAVED NAME COUNTS TOO, while a return is owed. That is only
+         //  safe because RTL-8's OCRETURN-abandon releases it: a switcher
+         //  that walks away from a compartment drops the frame, so the pin
+         //  is released by the very act of abandoning. Without that, a
+         //  scheduler could pin a code object forever -- denial of
+         //  revocation.
+         //
+         //  THE COMPLETE CONSUMER SET, enumerated from the decoder rather
+         //  than by example: every instruction that can change an entry's
+         //  identity or backing. That is Populate, Populate-Fast, Destroy
+         //  and page-out. Page-in is NOT in the set -- it already refuses
+         //  unless the object is non-resident, and an executing object is
+         //  necessarily resident, so it is closed for an independent reason
+         //  that predates this increment.
+         //
+         //  POPULATE IS IN THE SET AND IS THE ONE THAT NEARLY GOT MISSED.
+         //  Repopulating a still-valid slot bumps generation AND repoints
+         //  Base/Length/Perms ($veda_odtpd_new_gen below), so it does
+         //  everything Destroy does and more. Refusing Destroy while
+         //  leaving Populate open would not be a partial fix, it would be a
+         //  BYPASSABLE one.
+         //  THE COMPARISON IS BY SLOT, NOT BY NAME, AND THAT IS A REAL
+         //  SAIL/RTL DIVERGENCE -- a deliberate one, because the two layers
+         //  do not identify a descriptor the same way.
+         //
+         //  Sail resolves an entry as base(region) + the FULL 24-bit local,
+         //  so name and slot are in bijection there and a name compare IS a
+         //  slot compare. This file models 256 locals per region and
+         //  resolves with local[7:0] only ($veda_odt_entry_idx, above), so
+         //  MANY names share one slot -- Object_ID 436 and Object_ID 180
+         //  land on the same 32 bytes. The id_hi tag exists to detect
+         //  exactly that, but it is consulted only on the two READ paths
+         //  ($veda_odt_valid, $veda_check_odt_valid); neither ODT write arm
+         //  looks at it.
+         //
+         //  So a name compare here would have been bypassable in one
+         //  instruction: destroy or repopulate Object_ID 436 while the core
+         //  executes object 180, pass the pin (436 != 180), and clobber the
+         //  descriptor of the code being fetched. Execute-after-free, by
+         //  the exact route this increment exists to close.
+         //
+         //  Same region and same local[7:0] means the same entry, because
+         //  entry_idx = region_base(region) + local[7:0] and equal regions
+         //  give equal bases. Full-name equality implies this, so the slot
+         //  compare strictly subsumes the name compare rather than
+         //  replacing one guarantee with another.
+         $veda_object_slot_is_pcc   = ($veda_object_id[43:24] == $veda_pcc_object[43:24]) &&
+                                       ($veda_object_id[7:0]   == $veda_pcc_object[7:0]);
+         $veda_object_slot_is_mepcc = ($veda_object_id[43:24] == $veda_mepcc_object[43:24]) &&
+                                       ($veda_object_id[7:0]   == $veda_mepcc_object[7:0]);
+         $veda_object_is_executing = $veda_object_slot_is_pcc ||
+                                      (($veda_trap_depth != 8'b0) && $veda_object_slot_is_mepcc);
+         //  THE PIN REFUSAL IS A SEPARATE SIGNAL FROM THE GATES IT JOINS,
+         //  and that split is deliberate rather than tidiness.
+         //
+         //  Populate's and Destroy's PRE-EXISTING gates (privilege, ODA
+         //  authority, retired) refuse SILENTLY here: they suppress the ODT
+         //  write and the rd write and raise nothing. veda_smoke_m4_neg.S
+         //  and veda_smoke_m11_neg.S both depend on exactly that -- they
+         //  droppriv, populate, and keep executing. Sail raises
+         //  Illegal_Instruction for those same gates, so the two layers
+         //  already disagree about SIGNALLING here; that divergence predates
+         //  this increment and is recorded separately rather than silently
+         //  widened or silently inherited.
+         //
+         //  The pin must NOT inherit the silence. Sail's own pin refusal is
+         //  Illegal_Instruction, this file's page-out and page-in refusals
+         //  already trap, and the security argument is the decisive one: the
+         //  whole point is that software LEARNS it may not evict the running
+         //  object, so it can abandon the frame first and retry. A silent
+         //  refusal tells a pager the eviction happened when it did not --
+         //  which is worse than either trapping or succeeding, because the
+         //  pager then reuses memory it does not own.
+         $veda_executing_pin_refusal = ($is_veda_odt_populate || $is_veda_odt_populate_fast ||
+                                        $is_veda_odt_destroy) && $veda_object_is_executing;
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
-                                          (!($priv || $veda_oda_authorized) || $veda_odt_retired);
-         $veda_odt_destroy_violation  = $is_veda_odt_destroy  && !($priv || $veda_oda_authorized);
+                                          (!($priv || $veda_oda_authorized) || $veda_odt_retired ||
+                                           $veda_object_is_executing);
+         $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
+                                          (!($priv || $veda_oda_authorized) ||
+                                           $veda_object_is_executing);
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: the paging pair's refusal conditions. Follows
          //  Destroy's authority shape, NOT Populate's -- Sail's gate is
@@ -2040,6 +2134,9 @@
          //  slot, which Sail's page-out preserves.
          $veda_odt_page_out_refusal = $is_veda_odt_page_out &&
                                        (!($priv || $veda_oda_authorized) ||
+                                        // RTL-9 (R11(b)): first, so no future
+                                        // relaxation of the gates below can open it
+                                        $veda_object_is_executing ||
                                         !$veda_odt_valid ||
                                         !$veda_odt_resident ||
                                         ($veda_odt_gen == 24'hFFFFFF));
@@ -3731,6 +3828,9 @@
                              // transcription.
                              $veda_odt_page_out_refusal ||
                              $veda_odt_page_in_refusal ||
+                             // RTL-9 (R11(b)): the executing-object pin traps,
+                             // unlike the silent gates it sits beside.
+                             $veda_executing_pin_refusal ||
                              $is_ecall;
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: a general ILLEGAL-INSTRUCTION umbrella.
@@ -3766,7 +3866,8 @@
          //  place to forget next time.
          $veda_illegal_instr = $veda_csr_escape_violation ||
                                 $veda_odt_page_out_refusal ||
-                                $veda_odt_page_in_refusal;
+                                $veda_odt_page_in_refusal ||
+                                $veda_executing_pin_refusal;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
             // ordering is mandatory rather than stylistic. A non-resident
@@ -4237,6 +4338,32 @@
                                      ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
                                      (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
+         // RTL-9 (R11(b)): the name PCC is running under. Mirrors Sail's
+         // veda_pcc_object exactly, arm for arm, including which arms are
+         // ABSENT -- a poisoned unwind and an inner-level unwind both leave
+         // it alone, because trap entry already cleared it to NONE and an
+         // inner handler genuinely belongs to no object. Adding arms that
+         // force NONE there would compute the same value by a second route
+         // and invite the two routes to drift apart later.
+         $veda_pcc_object[43:0] = $reset ? VEDA_OBJECT_NONE :
+                                   // the handler runs unbounded at mtvec and is not
+                                   // executing any object, so it must not carry the
+                                   // callee's name. Nothing is lost: while the return
+                                   // is owed the SAVED name pins the same object.
+                                   (>>1$veda_trap_taken) ? VEDA_OBJECT_NONE :
+                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_object :
+                                   (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_object_id :
+                                   (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_object_id :
+                                                                                              >>1$veda_pcc_object;
+         // The saved name travels with the saved bounds, captured and
+         // released on exactly the same conditions as $veda_mepcc_base --
+         // deliberately keyed on the SAME depth terms, because a save slot
+         // whose three fields answered to different conditions is precisely
+         // the defect R12 existed to remove.
+         $veda_mepcc_object[43:0] = $reset ? VEDA_OBJECT_NONE :
+                                     (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_object :
+                                     ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? VEDA_OBJECT_NONE :
+                                                                                               >>1$veda_mepcc_object;
          // RTL Milestone 18: plain read/write CSR, no other write source
          // (unlike veda_pcc_base/length, which also get written by a
          // successful OCInvoke/trap) -- mirrors $mtvec's own simple
