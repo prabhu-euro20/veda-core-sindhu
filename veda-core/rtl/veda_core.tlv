@@ -3040,13 +3040,33 @@
          // a non-resident target domain commits NOTHING: no c15/IDC write,
          // no PCC narrowing, no SSC clear, no PC redirect.
          $veda_ocinvoke_region_fault = $is_veda_ocinvoke && !$veda_crossing_rt_resident;
+         // ─────────────────────────────────────────────────────────
+         //  RTL-7 (R11, DESIGN_07 Tier H): REVALIDATE THE CODE OBJECT.
+         //
+         //  The three crossings were the ONLY consumers of an object's Base
+         //  that never re-read the ODT -- so a sealed CODE capability
+         //  survived an eviction that a DATA capability to the same object
+         //  did not. Execute-after-free, reproduced on the Sail model with
+         //  a control isolating it: after the same page-out, veda.bind
+         //  refused with 0x0A while ocinvoke took the jump.
+         //
+         //  THE MIRROR IS NEARLY FREE HERE, and why is worth recording.
+         //  All three crossing encodings place the CODE capability at
+         //  instr[18:15] -- exactly $veda_ocl_ocs_rs1_cap, the index
+         //  already feeding the shared dereference lookup. So the entry is
+         //  ALREADY read for these instructions, and both halves of the
+         //  check already exist: $veda_gen_stale is generation/valid,
+         //  $veda_deref_nonresident is residency. Sail needed a new helper;
+         //  the RTL needs only new terms. The shared-checker asymmetry that
+         //  cost fourteen edit sites in RTL-6b buys the mirror back here.
          $veda_ocinvoke_violation = $is_veda_ocinvoke && (
             !$veda_rs1cap_tag || !$veda_cs2_tag ||
             !$veda_sealed || !$veda_cs2_sealed ||
             ($veda_rs1cap_otype != $veda_cs2_otype) ||
             !$veda_rs1cap_perms[10] || !$veda_cs2_perms[10] ||
             !$veda_rs1cap_perms[1] || $veda_cs2_perms[1] ||
-            !$veda_crossing_rt_resident);
+            !$veda_crossing_rt_resident ||
+            $veda_gen_stale || $veda_deref_nonresident);
          $veda_ocinvoke_cause[4:0] =
             !$veda_rs1cap_tag           ? 5'h02 :
             !$veda_cs2_tag              ? 5'h02 :
@@ -3062,7 +3082,21 @@
             // cause that no existing test could catch (the corpus never
             // crosses into a non-resident domain).
             !$veda_crossing_rt_resident ? 5'h09 :
-                                           5'h11; // remaining case: cs2 wrongly executable
+            // RTL-7 (R11): AFTER the region arm -- a non-resident REGION
+            // means the object's entry was never legitimately readable.
+            // Generation before residency, matching Sail and both
+            // dereference checkers: 0x02 is the PERMANENT verdict
+            // (re-Bind), 0x0A the SERVICEABLE one (page it in). Page-out
+            // bumps generation, so a capability held across one reports
+            // 0x02 -- the Option-A contract, not a defect.
+            $veda_gen_stale             ? 5'h02 :
+            $veda_deref_nonresident     ? 5'h0A :
+            // The old fall-through, now EXPLICIT. It has to be: the arms
+            // above are new reachable causes, so leaving cs2's wrong
+            // executability silent would report 0x11 for a paged-out
+            // object. Same restructure RTL-6b needed, same reason.
+            $veda_cs2_perms[1]          ? 5'h11 :
+                                           5'h11;
          $veda_ocinvoke_cap_idx[3:0] =
             !$veda_rs1cap_tag           ? $veda_ocl_ocs_rs1_cap :
             !$veda_cs2_tag              ? $veda_cseal_cunseal_rs2_cap :
@@ -3077,6 +3111,17 @@
             // VEDA_CAUSE_REGION_FAULT)) -- the faulting thing is the CODE
             // capability whose domain is paged out, not the data operand.
             !$veda_crossing_rt_resident ? $veda_ocl_ocs_rs1_cap :
+            // RTL-7 (R11): the new causes need their OWN arms here, and
+            // this was caught by the test rather than by review. Both
+            // revalidate cs1 (the CODE capability, whose Base becomes
+            // PCC), and Sail traps veda_trap(rs1, cause) accordingly -- but
+            // this chain's DEFAULT is cs2's index, so without these two
+            // arms a paged-out code object reported cap_idx 4 instead of 3.
+            // The mechanism was right and the report was wrong, which is
+            // the harder kind of bug: mtval would have sent a handler to
+            // inspect the wrong capability entirely.
+            $veda_gen_stale             ? $veda_ocl_ocs_rs1_cap :
+            $veda_deref_nonresident     ? $veda_ocl_ocs_rs1_cap :
                                            $veda_cseal_cunseal_rs2_cap;
          // Real jump target: cs1.Base + cs1.Offset (the same real
          // CGetAddr semantics already established) -- CHERI's own real
@@ -3129,12 +3174,18 @@
          //  rather than inventing a second, parallel sealing mechanism.
          // ─────────────────────────────────────────────────────────
          $is_veda_ocjalr = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010100);
+         // RTL-7 (R11): OCJALR jumps to cs1.Base exactly as the two real
+         // crossings do, so it needs the identical revalidation even though
+         // it is intra-domain by design and carries no region check.
+         // Intra-domain says WHICH table resolves the Object_ID, not
+         // whether the object still exists.
          $veda_ocjalr_violation = $is_veda_ocjalr && (
             !$veda_rs1cap_tag || !$veda_cs2_tag ||
             !$veda_sealed || $veda_cs2_sealed ||
             !$veda_cs2_perms[9] ||
             ($veda_cs2_offset != $veda_rs1cap_otype) ||
-            !$veda_rs1cap_perms[1]);
+            !$veda_rs1cap_perms[1] ||
+            $veda_gen_stale || $veda_deref_nonresident);
          $veda_ocjalr_cause[4:0] =
             !$veda_rs1cap_tag                       ? 5'h02 :
             !$veda_cs2_tag                          ? 5'h02 :
@@ -3142,7 +3193,15 @@
             $veda_cs2_sealed                        ? 5'h03 :
             !$veda_cs2_perms[9]                     ? 5'h03 :
             ($veda_cs2_offset != $veda_rs1cap_otype) ? 5'h04 :
-                                                        5'h11; // remaining case: cs1 not executable
+            // RTL-7 (R11). Execute-permission was this chain's IMPLICIT
+            // default, so it is promoted to an explicit arm -- otherwise
+            // the two new arms are unreachable dead code, and placing them
+            // first would report 0x02 for a capability that simply is not
+            // executable.
+            !$veda_rs1cap_perms[1]                  ? 5'h11 :
+            $veda_gen_stale                         ? 5'h02 :
+            $veda_deref_nonresident                 ? 5'h0A :
+                                                        5'h11;
          $veda_ocjalr_cap_idx[3:0] =
             !$veda_rs1cap_tag                       ? $veda_ocl_ocs_rs1_cap :
             !$veda_cs2_tag                          ? $veda_cseal_cunseal_rs2_cap :
@@ -3216,11 +3275,18 @@
          // (the $csealentry_wr_en arm of /vreg's $object_id), so the
          // caller's domain is named unforgeably at mint time.
          $veda_ocreturn_region_fault = $is_veda_ocreturn && !$veda_crossing_rt_resident;
+         // RTL-7 (R11): a return is a crossing, and the one where an
+         // evicted object is MOST likely -- a callee runs for an unbounded
+         // time and the caller's code object is exactly the cold page a
+         // pager picks. Sail mutation testing proved this arm needs its own
+         // test: deleting OCRETURN's revalidation left the whole suite
+         // passing while the other two crossings were covered.
          $veda_ocreturn_violation = $is_veda_ocreturn && (
             !$veda_rs1cap_tag || !$veda_sealed ||
             ($veda_rs1cap_otype != 16'hFFFE) ||
             !$veda_rs1cap_perms[1] ||
-            !$veda_crossing_rt_resident);
+            !$veda_crossing_rt_resident ||
+            $veda_gen_stale || $veda_deref_nonresident);
          $veda_ocreturn_cause[4:0] =
             !$veda_rs1cap_tag                    ? 5'h02 :
             !$veda_sealed                        ? 5'h03 :
@@ -3230,7 +3296,11 @@
             // OCRETURN's single operand IS $veda_ocl_ocs_rs1_cap, which is
             // already $veda_trap_cap_idx's default fallback.
             !$veda_crossing_rt_resident          ? 5'h09 :
-                                                    5'h11; // remaining case: cs1 not executable
+            // RTL-7 (R11), same promotion of the implicit default.
+            !$veda_rs1cap_perms[1]               ? 5'h11 :
+            $veda_gen_stale                      ? 5'h02 :
+            $veda_deref_nonresident              ? 5'h0A :
+                                                    5'h11;
          $veda_ocreturn_target[63:0] = {8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset};
 
          // ─────────────────────────────────────────────────────────

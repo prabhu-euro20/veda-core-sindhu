@@ -179,6 +179,8 @@ Observable here only through Bind's own 0x06 refusal.
 
 ## 6. Honest scope
 
+- **R11 has since been mirrored (RTL-7)** -- see the section below. The crossings were the only
+  remaining consumers of an object's Base that never re-read the ODT.
 - **A pre-existing Sail/RTL divergence was found and NOT closed.** All five ODT-family instructions
   raise `Illegal_Instruction()` on authority failure in Sail. The new pair now does. **Populate,
   Populate-Fast and Destroy still silently no-op**, so an unauthorized attempt at any of the three is
@@ -203,3 +205,66 @@ Observable here only through Bind's own 0x06 refusal.
 - **DRAM latency is not modelled for the paging pair**, matching Populate/Destroy. For instructions
   that by definition touch backing store in any real machine, that is a deliberate call worth
   revisiting, not an inherited default.
+
+
+---
+
+# RTL mirror 7 -- R11 crossing revalidation
+
+**Date:** 2026-08-13. **Baseline:** 69/69. **Result:** 70/70. **Mutation:** 8/9 killed, 1 proven
+equivalent.
+
+Mirrors Sail's R11(a). The three domain crossings never re-read the ODT, so a sealed **code**
+capability survived an eviction that a **data** capability to the same object did not.
+
+## The mirror was nearly free, and that is the payoff of an earlier asymmetry
+
+All three crossing encodings place the code capability at `instr[18:15]` -- exactly
+`$veda_ocl_ocs_rs1_cap`, the index already feeding the shared dereference lookup. So the entry was
+**already being read** for these instructions, and both halves of the check already existed as
+signals: `$veda_gen_stale` (generation/valid) and `$veda_deref_nonresident` (residency, added in
+RTL-6b). Sail needed a new helper function; the RTL needed only new terms.
+
+The RTL collapsing Sail's two dereference checkers into one shared read cost fourteen hand-edited
+sites in RTL-6b. Here it pays that back.
+
+## What the tests caught that review did not
+
+**The cap_idx chain.** The first version added the cause arms and forgot that
+`$veda_ocinvoke_cap_idx` is a *separate* chain whose default is **cs2's** index. The trap fired with
+the right cause and the wrong capability -- `mtval` reported cap_idx 4 (the data capability) instead
+of 3 (the code one). Mechanism right, report wrong, which is the harder kind: a handler would have
+inspected the wrong capability entirely. OCJALR and OCReturn already default to rs1 and needed
+nothing.
+
+**OCJALR untested.** Mutation showed OCJALR's revalidation could be deleted with all 70 passing.
+This is the second time in one increment -- on the Sail side the untested crossing was OCReturn,
+here it was OCJALR. **When a fix spans N sites, the first test reliably covers N-1.** The remedy is
+to enumerate the sites deliberately rather than reach for them by example.
+
+**The violation OR cannot distinguish its own terms after a page-out.** Both `$veda_gen_stale` and
+`$veda_deref_nonresident` are true at once, so removing either left everything green. Separating
+them needed **destroy-then-repopulate**: the slot is valid again, resident again, and its generation
+has moved, so only the generation term can catch it. That is also the case that makes the
+execute-view revocation claim real -- a destroyed object whose slot is immediately reused is exactly
+when a stale code capability must not still enter.
+
+**OCJALR's cause ordering.** Execute-permission was that chain's implicit default and had to be
+promoted to an explicit arm, or the new arms would be dead code. Proving the promotion needed a
+sealed capability with **no** Permit_Execute: correct reports 0x11, the demoted form reports 0x02.
+
+## The one survivor, proven equivalent
+
+R4 (residency term deleted from OCInvoke's violation OR) survives, and cannot be killed through the
+ISA. Isolating it needs generation-matching-but-non-resident, and page-out is the only producer of
+non-residency and always bumps the generation. Same disposition and same proof as Sail's M5. The
+term stays: that argument is a property of the current producer set, not of the checker.
+
+## Honest scope
+
+- Only half (a) of R11 is mirrored. **Half (b) -- PCC/MEPCC carrying an object identity so that
+  eviction of the *running* code object is refused -- is not built in either layer.** Half (a) closes
+  entering an object evicted while you were not running it; it does nothing about eviction while you
+  are inside it, because instruction fetch compares the PC against PCC and never re-reads the table.
+- **R12 is open and unfixed** -- a nested trap silently unbounds a compartment. It touches the same
+  PCC/MEPCC state half (b) would build on, which is why (b) has not started.

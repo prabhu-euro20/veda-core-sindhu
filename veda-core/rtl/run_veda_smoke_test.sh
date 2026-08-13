@@ -410,6 +410,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_paging_refusals_neg.vvp" "$SIM/veda_core.
 echo "==> Simulating (RTL-6c paging refusals)"
 vvp "$SIM/sim_paging_refusals_neg.vvp" +elf_hex="$SIM/veda_smoke_paging_refusals_neg.hex"
 
+echo "==> RTL-7: Compiling (R11 crossing revalidation, negative)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r11_crossing_neg.sv"
+echo "==> Simulating (RTL-7 R11 crossing revalidation)"
+vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp"
