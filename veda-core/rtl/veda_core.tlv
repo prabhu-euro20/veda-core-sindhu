@@ -5211,7 +5211,33 @@
          // -Populate itself is permanently refused for it from here on
          // ($veda_odt_populate_violation, above).
          odt_mem[CPU_veda_odt_addr_a0+19] <= {7'b0, CPU_veda_odtpd_new_retired_a0};
-      end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0 && CPU_veda_odt_idx_ok_a0) begin
+      // RTL-10 (R13, DESIGN_07 Tier H): DESTROY MAY ONLY TOUCH A SLOT THAT
+      // ACTUALLY HOLDS THE NAMED OBJECT.
+      //
+      // Milestone 15 fixed low-byte aliasing by storing the full Object_ID
+      // in the slot and requiring it to match -- but it applied that to the
+      // two READ paths only ($veda_odt_valid, $veda_check_odt_valid). Destroy
+      // is an access too, and without the same tag it clears a DIFFERENT,
+      // LIVE object: `veda.odt.destroy 436` lands on slot 180 (436's low byte
+      // is 180) and wipes object 180's descriptor.
+      //
+      // Sail cannot express that bug -- it indexes with the FULL 24-bit local
+      // (VEDA_LOCAL_MODELED = 2^20), so 436 and 180 are genuinely different
+      // entries and destroying one leaves the other alone. Gating on the tag
+      // is what makes this file agree: if the slot's tag is not ours, the
+      // object we named is not in the table, and Destroy has nothing here to
+      // do.
+      //
+      // Gated on id_match and NOT on $veda_odt_valid, deliberately: Sail's
+      // Destroy bumps the generation of an already-invalid entry too, and
+      // that must keep working. Only the IDENTITY is in question here, not
+      // the liveness.
+      //
+      // Populate keeps its slot TAKEOVER -- that is Milestone 15's own
+      // deliberate semantics for a 256-slot model, and the displaced object
+      // then reads not-found rather than reading someone else's data. Taking
+      // a free-able slot is reuse; clearing a slot you do not own is not.
+      end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0 && CPU_veda_odt_idx_ok_a0 && CPU_veda_odt_id_match_a0) begin
          odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_odtpd_new_gen_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+16] <= CPU_veda_odtpd_new_gen_a0[23:16];

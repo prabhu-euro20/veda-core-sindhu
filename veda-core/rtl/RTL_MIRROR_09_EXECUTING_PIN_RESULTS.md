@@ -2,6 +2,11 @@
 
 **Result: 72/72 smoke (71 pre-existing + 1 new), 51/51 ACT4, 7 of 8 mutants killed.**
 
+> **Follow-on RTL-10 (R13), same session:** reading the write paths for this increment exposed that
+> Milestone 15's anti-aliasing tag was applied to reads only, so `veda.odt.destroy 288` cleared
+> live object 32's descriptor. Fixed by gating Destroy's ODT write on the tag; suite is now
+> **73/73 smoke, 51/51 ACT4**, both new mutants killed. See DESIGN_07 R13.
+
 ## What this closes
 
 R11(a) made the three domain crossings revalidate their code object, which closes *entering* an

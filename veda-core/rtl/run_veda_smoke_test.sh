@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-10 (R13): Compiling (aliased Destroy must not clear a foreign slot)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r13_alias_destroy_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r13_alias_destroy_neg.sv"
+echo "==> Simulating (RTL-10 R13 aliased destroy)"
+vvp "$SIM/sim_r13_alias_destroy_neg.vvp" +elf_hex="$SIM/veda_smoke_r13_alias_destroy_neg.hex"
+
 echo "==> RTL-9 (R11b): Compiling (executing-object pin)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11b_pin.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r11b_pin.sv"
 echo "==> Simulating (RTL-9 R11b executing-object pin)"
