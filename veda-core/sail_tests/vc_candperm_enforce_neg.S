@@ -87,17 +87,46 @@ _start:
     bne  x10, x6, fail
     li   x26, 0x600D
 
+    # ---- phase 6: NMC_ADD IS A STORE, and it did not ask.
+    # Permit_NMC_Compute was NMC_ADD's only permission gate, so c1 -- which
+    # had Permit_Store deliberately stripped in phase 2 -- could still write
+    # through it, because the seeded Perms 0x100C carry Load|Store|NMC
+    # together and attenuating bit 3 leaves bit 12 set. That made every
+    # store-side attenuation advisory, including the one DESIGN_02's
+    # copy-on-write is specified to be built on.
+    #
+    # Veda-Atomic had already answered this for the identical read-modify
+    # -write shape (veda_atomic_insts.sail:34, "reuses Permit_Load +
+    # Permit_Store"). Two RMW families, two different answers; this is the one
+    # nobody asked about.
+    li   x3, 7
+    .insn r 0x0b, 0x3, 0x02, x12, x1, x3  # nmc_add.d via c1 -- must trap 0x13
+    mv   x27, x21                  # expect 0x33 again -- same cap, same cause
+
+    # and the memory must still hold phase 5's value: the refused NMC never
+    # landed, which a bounds- or tag-shaped refusal alone would not prove
+    li   x10, 0
+    .insn r 0x0b, 0x3, 0x00, x10, x0, x2  # ocl.d c0, x2, x10
+    li   x6, 0x5A5A
+    bne  x10, x6, fail
+    li   x28, 0x600D
+
     # ---- final checks
     li   x6, 0x33
     bne  x23, x6, fail             # store violation reported 0x13 with cap_idx 1
     li   x6, 0x92
     bne  x25, x6, fail             # load violation reported 0x12 with cap_idx 4
-    li   x6, 2
-    bne  x20, x6, fail             # exactly two traps, no more, no fewer
+    li   x6, 0x33                  # x6 still held 0x92 from the check above --
+                                   # re-establish it, or this compares the
+                                   # store violation against the load one
+    bne  x27, x6, fail             # NMC_ADD reported the STORE violation too
+    li   x6, 3
+    bne  x20, x6, fail             # exactly three traps, no more, no fewer
     li   x6, 0x600D
     bne  x22, x6, fail
     bne  x24, x6, fail
     bne  x26, x6, fail
+    bne  x28, x6, fail
     RVMODEL_HALT_PASS
 
 .balign 4

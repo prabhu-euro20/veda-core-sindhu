@@ -107,6 +107,27 @@ _start:
     .insn r 0x2b, 0x3, 0x00, x13, x4, x3   // veda.amoadd.d via c4 -- TRAP (5)
     mv   x11, x21                          // expect (4 << 5) | 0x12 = 0x92
 
+    // ═══ phase 8b: NMC_ADD is a FOURTH write path, and it asked for nothing.
+    // Permit_NMC_Compute was its only permission gate, so c1 -- store stripped
+    // in phase 2 -- could still write through it, because Perms 0x100C carry
+    // Load|Store|NMC together and attenuating bit 3 leaves bit 12 set.
+    //
+    // THIS IS THE SITE MY OWN ENUMERATION MISSED. Phases 6 and 7 were chosen
+    // by asking "where is $veda_perm_store_ok used?" -- which can never
+    // surface a path that does not use it. The right question is "where is
+    // memory WRITTEN?", and that one finds NMC_ADD immediately.
+    li   x3, 7
+    .insn r 0x0b, 0x3, 0x02, x15, x1, x3   // nmc_add.d via c1 -- TRAP (6)
+    mv   x19, x21                          // expect 0x33, same as OCS.D
+
+    // .W is a SEPARATE decode (funct3=010) with its own violation expression
+    // and its own cause mux, so covering .D covers nothing of it. The first
+    // sweep proved that literally: the .D mutant died and the .W mutant lived.
+    // Two widths is two sites, the same way three store paths were three.
+    li   x3, 7
+    .insn r 0x0b, 0x2, 0x02, x15, x1, x3   // nmc_add.w via c1 -- TRAP (7)
+    mv   x31, x21                          // expect 0x33 as well
+
     // ═══ phase 9: CAndPerm must carry the GENERATION, and proving that needs
     //     an object whose generation is NOT zero. ═══
     // Object 1's generation is 0 and a capability register resets to 0, so a
@@ -153,8 +174,11 @@ _start:
     bne  x25, x6, fail                     // OCL.D load violation, cap_idx 4
     li   x6, 0x92
     bne  x11, x6, fail                     // atomic load violation, cap_idx 4
-    li   x6, 5
-    bne  x20, x6, fail                     // exactly five traps
+    li   x6, 0x33
+    bne  x19, x6, fail                     // NMC_ADD.D reported the STORE cause
+    bne  x31, x6, fail                     // and NMC_ADD.W independently
+    li   x6, 7
+    bne  x20, x6, fail                     // exactly seven traps
     li   x6, 0x600D
     bne  x22, x6, fail
     bne  x24, x6, fail

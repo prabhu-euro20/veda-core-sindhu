@@ -3642,8 +3642,28 @@
          // need to (already xlen-wide).
          $veda_nmc_rd_value[63:0] = $is_veda_nmc_add_w ? {{32{$veda_cap_old_w[31]}}, $veda_cap_old_w} : $veda_cap_old_d;
 
-         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_w || $veda_deref_nonresident);
-         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
+         // RTL-13: NMC_ADD IS A LOAD AND A STORE, and asked for neither.
+         // Permit_NMC_Compute was its only permission gate, so a capability
+         // with Permit_Store stripped still wrote through it -- and the seeded
+         // Perms 0x100C carry Load|Store|NMC together, so attenuating bit 3
+         // leaves bit 12 set and the write lands. That made every store-side
+         // attenuation advisory, including the one copy-on-write is to be
+         // built on. Veda-Atomic, the identical read-modify-write shape, has
+         // required both since it was written; NMC is the one nobody asked
+         // about. Permit_NMC_Compute stays as an ADDITIONAL gate, not a
+         // substitute.
+         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_w || $veda_deref_nonresident);
+         // RTL-13: NMC_ADD IS A LOAD AND A STORE, and asked for neither.
+         // Permit_NMC_Compute was its only permission gate, so a capability
+         // with Permit_Store stripped still wrote through it -- and the seeded
+         // Perms 0x100C carry Load|Store|NMC together, so attenuating bit 3
+         // leaves bit 12 set and the write lands. That made every store-side
+         // attenuation advisory, including the one copy-on-write is to be
+         // built on. Veda-Atomic, the identical read-modify-write shape, has
+         // required both since it was written; NMC is the one nobody asked
+         // about. Permit_NMC_Compute stays as an ADDITIONAL gate, not a
+         // substitute.
+         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
 
          // Veda-Atomic ALU: op-select values reuse real RISC-V Zaamo's
          // own encoding (see decode comment above). Signed MIN/MAX use
@@ -3752,12 +3772,24 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
+            // RTL-13: ordered to match the Sail clause term for term --
+            // NMC_Compute, then Load, then Store, then bounds. A refusal that
+            // fired with the wrong cause would send a copy-on-write handler
+            // after the wrong repair.
+            !$veda_perm_load_ok                    ? 5'h12 :
+            !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_nmc_bounds_ok_w                 ? 5'h01 :
                                                       5'h0A;
          $veda_nmc_add_d_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
+            // RTL-13: ordered to match the Sail clause term for term --
+            // NMC_Compute, then Load, then Store, then bounds. A refusal that
+            // fired with the wrong cause would send a copy-on-write handler
+            // after the wrong repair.
+            !$veda_perm_load_ok                    ? 5'h12 :
+            !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
                                                       5'h0A;
          // Atomic reuses veda_check_access with need_load=need_store=
