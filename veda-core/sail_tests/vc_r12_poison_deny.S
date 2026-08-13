@@ -76,6 +76,11 @@ compartment:
 .balign 4
 handler:
     addi x20, x20, 1
+    li   x9, 3
+    beq  x20, x9, third_trap               # dispatch trap 3 HERE, not inside
+                                           # second_trap -- an earlier version
+                                           # routed only x20==2 and the third
+                                           # trap fell into the trap-1 path
     li   x9, 2
     beq  x20, x9, second_trap
 
@@ -90,7 +95,14 @@ handler:
     #      counter cannot reconstruct.
     la   x12, handler
     csrw 0x7C0, x12                        # veda_pcc_base
-    li   x13, 0x0080
+    li   x13, 0x0400                       # BOUNDED, but large enough to still
+                                           # contain the rest of this handler.
+                                           # An earlier attempt used 0x0080 and
+                                           # put the very next instruction
+                                           # outside the new window, so the
+                                           # narrowing itself fetch-faulted and
+                                           # depth ran away -- a real property
+                                           # of self-narrowing, not a typo.
     csrw 0x7C1, x13                        # veda_pcc_length -- now BOUNDED
     li   x21, 1
 
@@ -112,10 +124,28 @@ second_trap:
 
     # ---- unwind both levels from here. PCC is unbounded again (trap 2
     #      reset it), so these instructions and the halt are reachable.
+    # ---- unwind ONE level. depth 2 -> 1 with poison set, so the unwind
+    #      must install a ZERO-LENGTH PCC rather than reconstructing the
+    #      reset context. Reconstructing would hand unbounded authority to
+    #      a level that had been narrowed -- R12 again, one level up.
+    #
+    #      A zero-length PCC cannot fetch, so the proof that deny fired is
+    #      that this mret produces ANOTHER trap instead of resuming. Had
+    #      the unwind reconstructed instead of denying, execution would
+    #      have continued in the handler and no third trap would occur.
     csrr x16, mepc
     addi x16, x16, 4
     csrw mepc, x16
-    mret                                   # inner unwind: depth 2 -> 1
+    mret
+
+.balign 4
+third_trap:
+    # Reached only because the poisoned unwind denied. That is the whole
+    # assertion: fail-closed, loudly, at the very next fetch.
+    csrr x26, 0x7C8
+    li   x9, 1
+    bne  x21, x9, fail                     # the handler really did narrow itself
+    RVMODEL_HALT_PASS
 
 .balign 4
 verdict:
