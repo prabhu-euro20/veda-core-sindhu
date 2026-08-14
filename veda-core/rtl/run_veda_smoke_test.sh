@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-17: Compiling (the ODT policy write path)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_odt_set_domain.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_odt_set_domain.sv"
+echo "==> Simulating (RTL-17 policy write path)"
+vvp "$SIM/sim_odt_set_domain.vvp" +elf_hex="$SIM/veda_smoke_odt_set_domain.hex"
+
 echo "==> RTL-16 (R18): Compiling (the bounds check must not wrap)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_bounds_wrap_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_bounds_wrap_neg.sv"
 echo "==> Simulating (RTL-16 bounds wrap)"

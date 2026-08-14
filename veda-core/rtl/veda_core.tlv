@@ -130,6 +130,26 @@
    //  make every never-written slot read resident and the gate a silent
    //  no-op. Matches valid (+17) and retired (+19), whose set-state is 1.
    localparam int ODT_OFF_RESIDENT = 25;
+   //  RTL-17: owner_domain, 20 bits at +26..+28 -- WHO MAY BIND THIS OBJECT.
+   //
+   //  A NAMED constant for the same reason resident got one: this layout is
+   //  hand-written in six places, and a field placed at +26 in five of them and
+   //  +27 in the sixth compiles clean and produces permanently wrong policy.
+   //
+   //  POLICY, NOT IDENTITY. Base, Length and generation say what an object IS,
+   //  and changing them makes it a different object -- which is why only
+   //  Populate and Destroy touch them and both bump the generation, killing
+   //  every outstanding capability. owner_domain says how it may be USED, so
+   //  changing it must NOT kill capabilities. That distinction is the whole
+   //  reason veda.odt.set.domain exists.
+   localparam int ODT_OFF_OWNER_DOMAIN = 26;
+   //  "any domain may bind this" -- the value every object is created with, so
+   //  the field changes nothing until software deliberately narrows an object.
+   //  Note the reset pre-zero is NOT this value: zero is domain 0, a REAL
+   //  domain, so every seeded object must set this EXPLICITLY or it silently
+   //  becomes domain-0-only. Exactly the trap resident documented at its own
+   //  declaration.
+   localparam bit [19:0] VEDA_DOMAIN_ANY = 20'hFFFFF;
    // MILESTONE 24 (TCM_FAST_PATH_DESIGN.md): the first real DRAM-latency
    // number this core has ever modeled -- every prior milestone's own
    // cycle counts assumed odt_mem[]/elfmem[] access is always 1 cycle,
@@ -300,6 +320,7 @@
       // RESIDENCY_FAULT. Loud by design, per the polarity argument at the
       // ODT_OFF_RESIDENT declaration.
       odt_mem[ODT_BASE+32+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+32+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+32+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+32+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       // Milestone 2 addition: a second seeded object, deliberately
       // *without* Permit_NMC_Compute (Perms = 0x000C, Load+Store only),
       // so a real negative-control test can confirm NMC_ADD's own
@@ -315,6 +336,7 @@
       odt_mem[ODT_BASE+64+17] = 8'h01;
       odt_mem[ODT_BASE+64+18] = VEDA_OWNER_UNOWNED;
       odt_mem[ODT_BASE+64+ODT_OFF_RESIDENT] = 8'h01;   // RTL-6
+      {odt_mem[ODT_BASE+64+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+64+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+64+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       // Milestone 12 addition: Object_ID=60 -> region 0, local 60 -> entry
       // 0+60 -> byte offset 60*32 = 1920 from ODT_BASE ("60*16=960" was the
       // third stale RTL-2 derivation; 1920 below was already right), a
@@ -347,6 +369,7 @@
       // and m12/m12_neg would fail on a cause they never meant to test.
       // Sail carries the identical note at veda_regs.sail's own seed.
       odt_mem[ODT_BASE+1920+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+1920+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+1920+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+1920+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       // ────────────────────────────────────────────────────────────────
       //  RTL-4 (DESIGN_08): two CROSS-REGION seeds, mirroring Sail's own
       //  two at veda_regs.sail:665-693 field-for-field.
@@ -375,6 +398,7 @@
       odt_mem[ODT_BASE+8224+17] = 8'h01;
       odt_mem[ODT_BASE+8224+18] = VEDA_OWNER_UNOWNED;
       odt_mem[ODT_BASE+8224+ODT_OFF_RESIDENT] = 8'h01;   // RTL-6
+      {odt_mem[ODT_BASE+8224+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+8224+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+8224+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       odt_mem[ODT_BASE+8224+20] = 8'h00;  // Object_ID[15:8]
       odt_mem[ODT_BASE+8224+21] = 8'h00;  // Object_ID[23:16]
       odt_mem[ODT_BASE+8224+22] = 8'h01;  // Object_ID[31:24]  <- the region
@@ -402,6 +426,7 @@
       // fires at all -- tb_veda_smoke_region_fault_neg's expected mtval
       // would silently move from 0x69 to 0x6A.
       odt_mem[ODT_BASE+16608+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+16608+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+16608+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+16608+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       odt_mem[ODT_BASE+16608+20] = 8'h00;  // Object_ID[15:8]
       odt_mem[ODT_BASE+16608+21] = 8'h00;  // Object_ID[23:16]
       odt_mem[ODT_BASE+16608+22] = 8'h02;  // Object_ID[31:24]  <- the region
@@ -451,6 +476,7 @@
       // bytes but not the same claim, and the next reader deserves to see
       // which one this is.
       odt_mem[ODT_BASE+3328+ODT_OFF_RESIDENT] = 8'h00;      // NOT resident
+      {odt_mem[ODT_BASE+3328+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+3328+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+3328+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       //  RTL-6 ORDERING FIXTURE A -- Object_ID=105 -> entry 105 -> byte
       //  offset 3360. Valid, NOT resident, and owned by hart 0x63.
       //
@@ -473,6 +499,7 @@
       odt_mem[ODT_BASE+3360+17] = 8'h01;                    // valid
       odt_mem[ODT_BASE+3360+18] = 8'h63;                    // owned by hart 99
       odt_mem[ODT_BASE+3360+ODT_OFF_RESIDENT] = 8'h00;      // NOT resident
+      {odt_mem[ODT_BASE+3360+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+3360+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+3360+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       //  RTL-6 ORDERING FIXTURE B -- Object_ID = (2<<24)|8 = 33554440,
       //  region 2, local 8 -> entry rt_odt_base[2] + 8 = 512+8 = 520 ->
       //  byte offset 520*32 = 16640. Valid, NOT resident, in region 2,
@@ -502,6 +529,7 @@
       odt_mem[ODT_BASE+16640+23] = 8'h00;  // Object_ID[39:32]
       odt_mem[ODT_BASE+16640+24] = 8'h00;  // {4'b0, Object_ID[43:40]}
       odt_mem[ODT_BASE+16640+ODT_OFF_RESIDENT] = 8'h00;     // NOT resident
+      {odt_mem[ODT_BASE+16640+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+16640+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+16640+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       // ────────────────────────────────────────────────────────────────
       //  RTL-6c PAGING FIXTURES. `generation` is architecturally
       //  UNREADABLE by design -- there is no CGet for it -- so the only
@@ -521,6 +549,7 @@
       odt_mem[ODT_BASE+3392+17] = 8'h01;
       odt_mem[ODT_BASE+3392+18] = VEDA_OWNER_UNOWNED;
       odt_mem[ODT_BASE+3392+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+3392+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+3392+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+3392+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       //  Object_ID=108 -> entry 108 -> byte offset 3456. generation
       //  0xFFFFFD, TWO steps below the ceiling, and the second step is the
       //  whole point.
@@ -543,6 +572,7 @@
       odt_mem[ODT_BASE+3456+17] = 8'h01;
       odt_mem[ODT_BASE+3456+18] = VEDA_OWNER_UNOWNED;
       odt_mem[ODT_BASE+3456+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+3456+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+3456+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+3456+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
       //  Object_ID=109 -> entry 109 -> byte offset 3488. Live, resident,
       //  and OWNED BY HART 0x63. Page-out is gated on ODA authority, NOT
       //  on ownership, so a pager may legitimately evict an object it does
@@ -558,6 +588,7 @@
       odt_mem[ODT_BASE+3488+17] = 8'h01;
       odt_mem[ODT_BASE+3488+18] = 8'h63;   // owned by hart 99
       odt_mem[ODT_BASE+3488+ODT_OFF_RESIDENT] = 8'h01;
+      {odt_mem[ODT_BASE+3488+ODT_OFF_OWNER_DOMAIN+2], odt_mem[ODT_BASE+3488+ODT_OFF_OWNER_DOMAIN+1], odt_mem[ODT_BASE+3488+ODT_OFF_OWNER_DOMAIN]} = {4'b0, VEDA_DOMAIN_ANY};
    end
 
    // ═══════════════════════════════════════════════════════════════════
@@ -1576,6 +1607,10 @@
          //  wider encoding here. That is inherited from ODT-Destroy, which
          //  has the identical asymmetry, not introduced by this increment.
          $is_veda_odt_page_out = $op_is_custom0 && ($funct3 == 3'b001) && ($funct7 == 7'b0000101);
+         // RTL-17: the POLICY write path. Two-register form (rs2 = new domain,
+         // rs1 = Object_ID) in the same funct3=001 family as Destroy and
+         // page-out, on the first free funct7.
+         $is_veda_odt_set_domain = $op_is_custom0 && ($funct3 == 3'b001) && ($funct7 == 7'b0000110);
          $is_veda_odt_page_in  = $op_is_custom0 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101);
 
          $op_is_custom1   = ($opcode == 7'b0101011);
@@ -1824,6 +1859,9 @@
          //  field declaration; the names here are as far apart as the
          //  established $veda_odt_* / $veda_region_* prefixes allow.
          $veda_odt_resident    = odt_mem[$veda_odt_addr+ODT_OFF_RESIDENT][0];
+         $veda_odt_owner_domain[19:0] = {odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN+2][3:0],
+                                          odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN+1],
+                                          odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN]};
          // Milestone 12: plain Bind's own real, genuine hard-trap --
          // a LIVE object owned by a genuinely different hart, distinct
          // in kind from "object not found" (Milestone 13, below). Joins
@@ -1852,6 +1890,38 @@
          // probe, which is exactly what makes leaking through it worse than
          // through a trapping instruction -- there is no fault to notice.
          $veda_bind_ok = $veda_odt_valid && $veda_owner_ok;
+         // ═══ RTL-17: PER-OBJECT BIND AUTHORITY ═══
+         //
+         // The object itself says who may bind it. Three ways to pass: it is
+         // OPEN (how every object is created, so this changes nothing until
+         // software narrows one); the caller is in no compartment at all (boot
+         // and trap handlers -- the bootstrap and the pager); or the domains
+         // match.
+         //
+         // PER-OBJECT, NOT PER-REGION, and that is the lesson of the retracted
+         // R17. A region-granular rule broke the RETURN PATH: a compartment's
+         // caller lives in another domain by definition, so forbidding
+         // cross-domain Bind made compartments one-way and livelocked a test.
+         // Here the return object is left open while its neighbours are
+         // narrowed -- which is what legitimate sharing looks like.
+         //
+         // Subject is $veda_pcc_object, never $veda_current_region: that
+         // register is zero at reset and reset again on every trap, and region
+         // zero is ALSO a real domain, so "no domain" and "domain 0" would be
+         // one value.
+         //
+         // GATED ON $veda_odt_valid, and that term is a Sail-parity
+         // requirement rather than an optimisation. The model reads a
+         // not-found lookup as the empty entry, whose owner_domain is ANY, so
+         // it passes the gate and falls through to the not-found trap. This
+         // core would instead read whatever bytes occupy the slot, and could
+         // refuse with the wrong cause. Same property, different mechanism,
+         // so the term has to be explicit here.
+         $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
+                                 ($veda_pcc_object == VEDA_OBJECT_NONE) ||
+                                 ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
+         $veda_domain_violation = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
+                                   && $veda_odt_valid && !$veda_bind_domain_ok;
          $veda_bind_notfound_violation = $is_veda_bind_plain && !$veda_odt_valid;
          $veda_bind_trap = $veda_bind_owner_violation || $veda_bind_notfound_violation;
          $veda_bind_cause[4:0] = $veda_bind_owner_violation ? 5'h06 : 5'h05;
@@ -2113,6 +2183,12 @@
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
                                           (!($priv || $veda_oda_authorized) || $veda_odt_retired ||
                                            $veda_object_is_executing);
+         // RTL-17: authority exactly as Populate/Destroy, plus a refusal on a
+         // slot that holds nothing -- a policy on a non-existent object is
+         // meaningless, and allowing it would let software pre-stage rules on
+         // slots someone else has yet to populate.
+         $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
+                                           (!($priv || $veda_oda_authorized) || !$veda_odt_valid);
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
                                           (!($priv || $veda_oda_authorized) ||
                                            $veda_object_is_executing);
@@ -2297,6 +2373,7 @@
             // whose frame the pager is free to have given away.
             $bind_wr_en = (|cpu>>1$is_veda_bind_plain || |cpu>>1$is_veda_bind_notrap) &&
                           !|cpu>>1$veda_bind_trap &&
+                          !|cpu>>1$veda_domain_violation &&
                           !|cpu>>1$veda_region_fault &&
                           !|cpu>>1$veda_residency_fault &&
                           (|cpu>>1$veda_rd_cap == #vreg);
@@ -2329,7 +2406,8 @@
             // thing when the second is true, and the pager would never
             // be invoked.
             $rebind_wr_en = |cpu>>1$is_veda_rebind &&
-                            !|cpu>>1$veda_region_fault &&
+                            !|cpu>>1$veda_domain_violation &&
+                          !|cpu>>1$veda_region_fault &&
                             !|cpu>>1$veda_residency_fault &&
                             (|cpu>>1$veda_rd_cap == #vreg);
             $oca_wr_en  = |cpu>>1$is_veda_oca &&
@@ -3924,6 +4002,7 @@
                              $veda_ocjalr_violation || $veda_ocreturn_violation ||
                              $veda_bind_trap || $veda_pcc_violation ||
                              $veda_purecap_violation || $veda_csr_escape_violation ||
+                             $veda_domain_violation ||
                              $veda_region_fault ||
                              $veda_residency_fault ||
                              // RTL-6c: the paging pair's refusals really
@@ -3949,6 +4028,7 @@
                              // it was simply what the file did.
                              $veda_odt_populate_violation ||
                              $veda_odt_destroy_violation ||
+                             $veda_odt_set_domain_violation ||
                              $is_ecall;
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: a general ILLEGAL-INSTRUCTION umbrella.
@@ -3986,7 +4066,8 @@
                                 $veda_odt_page_out_refusal ||
                                 $veda_odt_page_in_refusal ||
                                 $veda_odt_populate_violation ||
-                                $veda_odt_destroy_violation;
+                                $veda_odt_destroy_violation ||
+                                $veda_odt_set_domain_violation;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
             // ordering is mandatory rather than stylistic. A non-resident
@@ -3998,6 +4079,11 @@
             // make, and telling the handler to give up where it should page
             // the domain in and retry. Verified free before use: 0x09
             // appears nowhere among this file's existing cause literals.
+            // RTL-17: before residency, matching Sail. Residency says "page
+            // this in"; this says "you were never entitled". Telling a caller
+            // with no right to the object to go run the pager is a hint about
+            // an object that is none of its business.
+            $veda_domain_violation    ? 5'h0B :
             $veda_region_fault        ? 5'h09 :
             // RTL-6: 0x0A sits immediately after 0x09 and immediately
             // before $veda_bind_trap, and both halves of that placement
@@ -4042,6 +4128,7 @@
          // reports rd for all three bind traps (veda_bind_insts.sail:149).
          $veda_trap_cap_idx[3:0] = $veda_ocinvoke_violation ? $veda_ocinvoke_cap_idx :
                                     $veda_ocjalr_violation   ? $veda_ocjalr_cap_idx :
+                                    $veda_domain_violation   ? $veda_rd_cap :
                                     $veda_region_fault       ? $veda_rd_cap :
                                     $veda_residency_fault    ? $veda_rd_cap :
                                     $veda_bind_trap          ? $veda_rd_cap :
@@ -5274,6 +5361,16 @@
       // (veda_regs.sail:536-539) -- without it an out-of-range base produces
       // a write the simulator drops with no architectural statement at all.
       if (act4_mode && (CPU_is_veda_odt_populate_a0 || CPU_is_veda_odt_populate_fast_a0) && !CPU_veda_odt_populate_violation_a0 && CPU_veda_odt_idx_ok_a0) begin
+         // RTL-17: a NEW object is created open. Destroy, page-out and page-in
+         // deliberately do NOT write this field, so policy SURVIVES paging --
+         // if eviction cleared it, an object could be un-narrowed simply by
+         // paging it out and back. That is the trap owner_hart already learned,
+         // and here "preserve" is expressed by the ABSENCE of a write, which no
+         // compiler checks. Stated here so the absence is deliberate and
+         // documented rather than accidental.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= VEDA_DOMAIN_ANY[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= VEDA_DOMAIN_ANY[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, VEDA_DOMAIN_ANY[19:16]};
          // Layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
          // +12..+13, generation +14..+16, valid +17, owner_hart +18, retired
          // +19, id_hi +20..+24, resident +25 (RTL-6, ODT_OFF_RESIDENT).
@@ -5356,6 +5453,19 @@
       // deliberate semantics for a 256-slot model, and the displaced object
       // then reads not-found rather than reading someone else's data. Taking
       // a free-able slot is reuse; clearing a slot you do not own is not.
+      // RTL-17: veda.odt.set.domain writes owner_domain AND NOTHING ELSE.
+      // The generation is deliberately NOT bumped -- that is the whole reason
+      // this instruction exists. Every other ODT writer bumps it and kills
+      // every outstanding capability, which would mean declaring a sharing
+      // rule destroys the sharing it describes.
+      //
+      // Gated on id_match for the same reason Destroy is (RTL-10): this core
+      // indexes by slot, so without the tag a policy meant for one object
+      // would land on whichever object actually occupies that slot.
+      end else if (act4_mode && CPU_is_veda_odt_set_domain_a0 && !CPU_veda_odt_set_domain_violation_a0 && CPU_veda_odt_idx_ok_a0 && CPU_veda_odt_id_match_a0) begin
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= CPU_rs2_data_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= CPU_rs2_data_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, CPU_rs2_data_a0[19:16]};
       end else if (act4_mode && CPU_is_veda_odt_destroy_a0 && !CPU_veda_odt_destroy_violation_a0 && CPU_veda_odt_idx_ok_a0 && CPU_veda_odt_id_match_a0) begin
          odt_mem[CPU_veda_odt_addr_a0+14] <= CPU_veda_odtpd_new_gen_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+15] <= CPU_veda_odtpd_new_gen_a0[15:8];
