@@ -1847,6 +1847,11 @@
          // veda_bind_insts.sail's own catch-all else-chain exactly
          // (owner check, THEN object-not-found, mutually exclusive
          // outcomes of the same `e.valid` test).
+         // RTL-14: a Bind that fails must hand back NOTHING, not a tagless copy
+         // of someone else's descriptor. Bind-NoTrap exists to be a SILENT
+         // probe, which is exactly what makes leaking through it worse than
+         // through a trapping instruction -- there is no fault to notice.
+         $veda_bind_ok = $veda_odt_valid && $veda_owner_ok;
          $veda_bind_notfound_violation = $is_veda_bind_plain && !$veda_odt_valid;
          $veda_bind_trap = $veda_bind_owner_violation || $veda_bind_notfound_violation;
          $veda_bind_cause[4:0] = $veda_bind_owner_violation ? 5'h06 : 5'h05;
@@ -2428,7 +2433,16 @@
                    // concession). Plain Bind's OWN wrong-owner case
                    // never reaches this line at all -- $bind_wr_en
                    // itself is already false then (the exclusion above).
-                   $bind_wr_en       ? (|cpu>>1$veda_odt_valid && |cpu>>1$veda_owner_ok) :
+                   // RTL-14: this same condition now gates the DATA fields too --
+                   // see $veda_bind_ok below. A failed Bind-NoTrap used to write
+                   // the resolved slot's Base/Length/Perms/Object_ID and clear
+                   // only the Tag, and the comment there called those fields
+                   // "dead either way once Tag=0". They are not dead: the
+                   // capability query family is deliberately NOT tag-gated, so
+                   // cgetbase after a failed probe returned the RAW PHYSICAL BASE
+                   // of whatever live object occupies the slot. Sail writes
+                   // zero_capability on the same failure.
+                   $bind_wr_en       ? |cpu>>1$veda_bind_ok :
                    // Rebind: 1 only on the real success path (rd wasn't
                    // already sealed, AND the ODT entry is valid) --
                    // covers both soft-fail cases (sealed rd; ODT miss)
@@ -2497,7 +2511,7 @@
                                   (#vreg == 12) ? 44'd33554452 :
                                   (#vreg == 13) ? 44'd33554453 :
                                   (#vreg == 14) ? 44'd50331670 : 44'b0) :
-                               $bind_wr_en       ? |cpu>>1$veda_object_id :
+                               $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_object_id : 44'b0) :
                                // Rebind success only -- on failure (sealed
                                // rd / ODT miss), Sail's own execute clause
                                // never calls wC() at all, so every field
@@ -2527,7 +2541,7 @@
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
                                                                     $RETAIN;
             $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 56'h8001_0300 : 56'b0) :
-                          $bind_wr_en       ? |cpu>>1$veda_odt_base :
+                          $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_base : 56'b0) :
                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_base :
                           $oca_wr_en        ? |cpu>>1$veda_rs1cap_base :
                           $candperm_wr_en   ? |cpu>>1$veda_rs1cap_base :
@@ -2539,7 +2553,7 @@
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
                                               $RETAIN;
             $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 40'h40 : 40'b0) :
-                            $bind_wr_en       ? |cpu>>1$veda_odt_length :
+                            $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_length : 40'b0) :
                             ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_length :
                             $oca_wr_en        ? |cpu>>1$veda_rs1cap_length :
                             $candperm_wr_en   ? |cpu>>1$veda_rs1cap_length :
@@ -2594,7 +2608,7 @@
                               (#vreg == 12) ? 16'h0402 :
                               (#vreg == 13) ? 16'h0400 :
                               (#vreg == 14) ? 16'h0002 : 16'b0) :
-                           $bind_wr_en ? |cpu>>1$veda_odt_perms :
+                           $bind_wr_en ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_perms : 16'b0) :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_perms :
                            $candperm_wr_en ? (|cpu>>1$veda_rs1cap_perms & |cpu>>1$rs2_data[15:0]) :
                            ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_perms :
@@ -2661,7 +2675,7 @@
             // (Reserved is packed/unpacked like every other field, not
             // special-cased).
             $reserved[23:0] = (|cpu$reset || |cpu>>1$reset) ? 24'b0 :
-                             $bind_wr_en ? |cpu>>1$veda_odt_gen :
+                             $bind_wr_en ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_gen : 24'b0) :
                              // Reserved = e.generation on Rebind success --
                              // the entire point of a Rebind refresh: the
                              // capability's cached generation must move
