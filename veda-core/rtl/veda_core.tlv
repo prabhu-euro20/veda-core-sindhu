@@ -1529,8 +1529,32 @@
          $is_veda_cgettype   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000100);
          $is_veda_cgetaddr   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101);
          $is_veda_cgetoffset = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000110);
+         // RTL-19: THE FAULT-IDENTIFICATION CHANNEL. A trap reports
+         // {cap_idx, cause} and no Object_ID, and this family could read every
+         // field of a capability EXCEPT its name -- so a handler was told which
+         // REGISTER faulted and could never learn which OBJECT that was. The
+         // copy-on-write handler cannot mint a copy without it, and the closest
+         // thing to a pager in the corpus hardcodes the Object_ID it repairs
+         // because there was no other way.
+         //
+         // Disclosing the name is safe, established rather than assumed:
+         // DESIGN_08 draws the confidentiality line around the physical base,
+         // explicitly not around the name, and CGetBase already returns a raw
+         // physical Base -- strictly more sensitive than this.
+         //
+         // NOT tag-gated and NO generation check, exactly like the other seven.
+         // A STALE capability therefore returns a real, currently-allocated
+         // name belonging to a DIFFERENT incarnation of that slot. Fault
+         // handlers are safe by construction (a capability that reached a fault
+         // already passed the tag and generation checks); a handler that stores
+         // the name and uses it later is not.
+         $is_veda_cgetobjectid = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000111);
          $is_veda_capquery = $is_veda_cgetbase || $is_veda_cgetlen || $is_veda_cgetperm ||
-                              $is_veda_cgettag || $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset;
+                              $is_veda_cgettag || $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset ||
+                              // omitting this OR-term would decode the instruction and
+                              // never fire the query path -- it would read back zero,
+                              // silently, which is the worst of the three outcomes
+                              $is_veda_cgetobjectid;
 
          // Real, honest observation already recorded once in Sail, not
          // re-litigated here: CSetBoundsExact's real distinction from
@@ -3185,6 +3209,7 @@
             $is_veda_cgettype   ? {48'b0, $veda_rs1cap_otype} :
             $is_veda_cgetaddr   ? ({8'b0, $veda_rs1cap_base} + {24'b0, $veda_rs1cap_offset}) :
             $is_veda_cgetoffset ? {24'b0, $veda_rs1cap_offset} :
+            $is_veda_cgetobjectid ? {20'b0, $veda_rs1cap_object_id} :
                                   64'b0;
 
          // ─────────────────────────────────────────────────────────

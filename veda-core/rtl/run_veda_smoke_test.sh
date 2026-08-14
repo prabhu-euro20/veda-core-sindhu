@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-19: Compiling (copy-on-write repaired end to end)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_cow_repair.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cow_repair.sv"
+echo "==> Simulating (RTL-19 COW repair)"
+vvp "$SIM/sim_cow_repair.vvp" +elf_hex="$SIM/veda_smoke_cow_repair.hex"
+
 echo "==> RTL-18: Compiling (copy-on-write)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_cow_fault.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_cow_fault.sv"
 echo "==> Simulating (RTL-18 copy-on-write)"
