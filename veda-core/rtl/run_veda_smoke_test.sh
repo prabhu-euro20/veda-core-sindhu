@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> RTL-17b: Compiling (per-object bind authority, enforced)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_bind_domain_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_bind_domain_neg.sv"
+echo "==> Simulating (RTL-17b bind authority)"
+vvp "$SIM/sim_bind_domain_neg.vvp" +elf_hex="$SIM/veda_smoke_bind_domain_neg.hex"
+
 echo "==> RTL-17: Compiling (the ODT policy write path)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_odt_set_domain.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_odt_set_domain.sv"
 echo "==> Simulating (RTL-17 policy write path)"
