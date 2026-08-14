@@ -2872,7 +2872,31 @@
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
          $veda_perm_load_ok  = $veda_rs1cap_perms[2];
          $veda_perm_store_ok = $veda_rs1cap_perms[3];
-         $veda_bounds_ok     = (($rs2_data + 64'd8) <= {24'b0, $veda_rs1cap_length});
+         // ═══ RTL-16 (R18): THE BOUNDS CHECK MUST NOT WRAP ═══
+         //
+         // This addition was 64 bits wide on both sides, and $rs2_data is a
+         // full, attacker-chosen 64-bit GPR. offset = 0xFFFFFFFFFFFFFFF8 makes
+         // offset+8 wrap to 0, "0 <= Length" passes, and $veda_real_addr --
+         // also a modular 64-bit add -- lands at Base-8. Every other term of
+         // the violation is satisfied by a perfectly ordinary capability:
+         // tagged, in-generation, unsealed, permitted, resident. So the access
+         // RETIRES, with no trap, reading and WRITING the bytes immediately
+         // below the object. In a packed allocator those bytes are the tail of
+         // the neighbouring object.
+         //
+         // Sail cannot express this bug: its `unsigned()` yields an
+         // arbitrary-precision integer, so `unsigned(offset) + width` cannot
+         // wrap. The model was right and the hardware was wrong -- the third
+         // divergence of this shape found in this file, and the first that is
+         // straightforwardly exploitable.
+         //
+         // The fix is to do the arithmetic one bit wider than the widest
+         // operand, so the carry has somewhere to go. 2^64-1 + 16 needs 65
+         // bits; at 65 bits the sum is far larger than any 40-bit Length and
+         // the compare correctly refuses. Widening the COMPARE is what matters
+         // -- clamping the offset instead would silently alias a huge offset
+         // onto a legal one, which is the same class of bug wearing a hat.
+         $veda_bounds_ok     = (({1'b0, $rs2_data} + 65'd8) <= {25'b0, $veda_rs1cap_length});
 
          $veda_ocl_violation = $is_veda_ocl && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_bounds_ok || $veda_deref_nonresident);
          $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_bounds_ok || $veda_deref_nonresident);
@@ -2908,7 +2932,8 @@
          //  where the access lands, only how many bytes/whether the tag
          //  store is touched.
          // ─────────────────────────────────────────────────────────
-         $veda_oclc_bounds_ok = (($rs2_data + 64'd16) <= {24'b0, $veda_rs1cap_length});
+         // RTL-16 (R18): same widening, same reason -- see $veda_bounds_ok above.
+         $veda_oclc_bounds_ok = (({1'b0, $rs2_data} + 65'd16) <= {25'b0, $veda_rs1cap_length});
          // RTL-2a: 32-byte natural alignment is architectural for capability
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.

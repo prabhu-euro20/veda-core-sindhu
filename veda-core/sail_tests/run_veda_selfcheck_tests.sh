@@ -51,7 +51,13 @@ for src in vc_*.S; do
     continue
   fi
 
-  out=$("$SIM" --config "$CFG" "$elf" 2>&1)
+  # A livelocking test must FAIL, not hang the suite. Recorded as needed
+  # after an earlier sweep was killed by one; proven necessary again when a
+  # bind-authority change turned a legitimate test into an infinite
+  # trap/mret loop and the runner sat on it for two and a half hours instead
+  # of reporting anything. --inst-limit is deterministic and
+  # machine-independent, which a wall-clock timeout is not.
+  out=$("$SIM" --config "$CFG" --inst-limit 2000000 "$elf" 2>&1)
   code=$?
   if [ "$code" -eq 0 ] && echo "$out" | grep -q "SUCCESS"; then
     results+=("PASS      $name")
