@@ -143,6 +143,18 @@
    //  changing it must NOT kill capabilities. That distinction is the whole
    //  reason veda.odt.set.domain exists.
    localparam int ODT_OFF_OWNER_DOMAIN = 26;
+   //  RTL-18: cow, 1 bit at +29 -- DESIGN_02 Mechanism 2, copy-on-write.
+   //  The SECOND policy field, and it obeys the same contract as the first:
+   //  setting it must not bump the generation, because marking an object
+   //  copy-on-write is not making it a different object. If it bumped, fork()
+   //  would kill every capability held by both parent and child at the exact
+   //  moment it tried to share them.
+   //
+   //  No explicit seed write is needed, unlike resident and owner_domain: the
+   //  reset pre-zero IS the correct value here (0 = not copy-on-write). Stated
+   //  so the absence is deliberate -- resident documented the opposite trap,
+   //  where 0 was the WRONG default and every seed had to set it by hand.
+   localparam int ODT_OFF_COW = 29;
    //  "any domain may bind this" -- the value every object is created with, so
    //  the field changes nothing until software deliberately narrows an object.
    //  Note the reset pre-zero is NOT this value: zero is domain 0, a REAL
@@ -1611,6 +1623,10 @@
          // rs1 = Object_ID) in the same funct3=001 family as Destroy and
          // page-out, on the first free funct7.
          $is_veda_odt_set_domain = $op_is_custom0 && ($funct3 == 3'b001) && ($funct7 == 7'b0000110);
+         // RTL-18: the second policy field. A SEPARATE instruction rather than a
+         // field selector -- a selector would put the set of writable fields in
+         // a software register; separate opcodes keep it fixed in the decoder.
+         $is_veda_odt_set_cow = $op_is_custom0 && ($funct3 == 3'b001) && ($funct7 == 7'b0000111);
          $is_veda_odt_page_in  = $op_is_custom0 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101);
 
          $op_is_custom1   = ($opcode == 7'b0101011);
@@ -1859,6 +1875,7 @@
          //  field declaration; the names here are as far apart as the
          //  established $veda_odt_* / $veda_region_* prefixes allow.
          $veda_odt_resident    = odt_mem[$veda_odt_addr+ODT_OFF_RESIDENT][0];
+         $veda_odt_cow = odt_mem[$veda_odt_addr+ODT_OFF_COW][0];
          $veda_odt_owner_domain[19:0] = {odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN+2][3:0],
                                           odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN+1],
                                           odt_mem[$veda_odt_addr+ODT_OFF_OWNER_DOMAIN]};
@@ -1917,6 +1934,13 @@
          // core would instead read whatever bytes occupy the slot, and could
          // refuse with the wrong cause. Same property, different mechanism,
          // so the term has to be explicit here.
+         // RTL-18: a store reached a copy-on-write object. Read from the ENTRY,
+         // never from the capability's permissions: set.cow does not bump the
+         // generation, so capabilities minted BEFORE the object became
+         // copy-on-write are still live and still carry store permission --
+         // and at fork() the parent holds exactly such a capability, which is
+         // the first one that will be written.
+         $veda_cow_write = $veda_check_odt_cow;
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
                                  ($veda_pcc_object == VEDA_OBJECT_NONE) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
@@ -2189,6 +2213,8 @@
          // slots someone else has yet to populate.
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
                                            (!($priv || $veda_oda_authorized) || !$veda_odt_valid);
+         $veda_odt_set_cow_violation = $is_veda_odt_set_cow &&
+                                        (!($priv || $veda_oda_authorized) || !$veda_odt_valid);
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
                                           (!($priv || $veda_oda_authorized) ||
                                            $veda_object_is_executing);
@@ -2686,7 +2712,15 @@
                               (#vreg == 12) ? 16'h0402 :
                               (#vreg == 13) ? 16'h0400 :
                               (#vreg == 14) ? 16'h0002 : 16'b0) :
-                           $bind_wr_en ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_perms : 16'b0) :
+                           // RTL-18: a copy-on-write object never hands out store
+                           // permission, however often it is bound. Handing out a
+                           // store-stripped capability in software would be only
+                           // advisory -- the holder could re-Bind the name and get a
+                           // fresh, fully-permissioned one. 16'hFFF7 clears bit 3.
+                           $bind_wr_en ? (|cpu>>1$veda_bind_ok
+                                            ? (|cpu>>1$veda_odt_cow ? (|cpu>>1$veda_odt_perms & 16'hFFF7)
+                                                                    : |cpu>>1$veda_odt_perms)
+                                            : 16'b0) :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_perms :
                            $candperm_wr_en ? (|cpu>>1$veda_rs1cap_perms & |cpu>>1$rs2_data[15:0]) :
                            ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_perms :
@@ -2926,6 +2960,12 @@
          // successfully dereferencing after Object_ID=356 (a low-byte
          // alias) took over slot 100, since generation/valid alone
          // can't tell the two apart.
+         // RTL-18: the DEREFERENCE-side cow read. Deliberately a different read
+         // from $veda_odt_cow above: that one is addressed from the GPR
+         // Object_ID a Bind names, this one from the capability being
+         // dereferenced. Using the bind-side signal here would consult
+         // whichever object some unrelated Bind happened to name.
+         $veda_check_odt_cow = odt_mem[$veda_check_odt_addr+ODT_OFF_COW][0];
          $veda_check_odt_id_hi[35:0] = {odt_mem[$veda_check_odt_addr+24], odt_mem[$veda_check_odt_addr+23], odt_mem[$veda_check_odt_addr+22], odt_mem[$veda_check_odt_addr+21], odt_mem[$veda_check_odt_addr+20]};
          $veda_check_odt_id_match    = ($veda_check_odt_id_hi == $veda_rs1cap_object_id[43:8]);
          $veda_check_odt_valid      = $veda_check_idx_ok && odt_mem[$veda_check_odt_addr+17][0] && $veda_check_odt_id_match;
@@ -2977,7 +3017,7 @@
          $veda_bounds_ok     = (({1'b0, $rs2_data} + 65'd8) <= {25'b0, $veda_rs1cap_length});
 
          $veda_ocl_violation = $is_veda_ocl && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_bounds_ok || $veda_deref_nonresident);
-         $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_bounds_ok || $veda_deref_nonresident);
+         $veda_ocs_violation = $is_veda_ocs && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || $veda_cow_write || !$veda_perm_store_ok || !$veda_bounds_ok || $veda_deref_nonresident);
          // $veda_violation itself is combined further below, once
          // NMC_ADD/Veda-Atomic's own violation signals are also computed
          // (kept textually after the checks they depend on, matching this
@@ -3017,7 +3057,7 @@
          // one-capability-one-granule is well defined.
          $veda_capmem_misaligned = $veda_real_addr[4:0] != 5'b0;
          $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
-         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
+         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || $veda_cow_write || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
 
          // Tag-store granule index: $veda_real_addr is absolute
          // (ELFMEM_BASE-relative), tag_mem[] is declared 0-based
@@ -3769,7 +3809,7 @@
          // required both since it was written; NMC is the one nobody asked
          // about. Permit_NMC_Compute stays as an ADDITIONAL gate, not a
          // substitute.
-         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_w || $veda_deref_nonresident);
+         $veda_nmc_add_w_violation = $is_veda_nmc_add_w && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || $veda_cow_write || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_w || $veda_deref_nonresident);
          // RTL-13: NMC_ADD IS A LOAD AND A STORE, and asked for neither.
          // Permit_NMC_Compute was its only permission gate, so a capability
          // with Permit_Store stripped still wrote through it -- and the seeded
@@ -3780,7 +3820,7 @@
          // required both since it was written; NMC is the one nobody asked
          // about. Permit_NMC_Compute stays as an ADDITIONAL gate, not a
          // substitute.
-         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
+         $veda_nmc_add_d_violation = $is_veda_nmc_add_d && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_nmc_ok || !$veda_perm_load_ok || $veda_cow_write || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
 
          // Veda-Atomic ALU: op-select values reuse real RISC-V Zaamo's
          // own encoding (see decode comment above). Signed MIN/MAX use
@@ -3800,7 +3840,7 @@
                                              64'b0;
          // Only consumed by the trailing raw \SV always_ff block below.
          `BOGUS_USE($veda_atomic_result)
-         $veda_atomic_violation = $is_veda_atomic && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
+         $veda_atomic_violation = $is_veda_atomic && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok || $veda_cow_write || !$veda_perm_store_ok || !$veda_nmc_bounds_ok_d || $veda_deref_nonresident);
 
          $veda_violation = $veda_ocl_violation || $veda_ocs_violation ||
                            $veda_nmc_add_w_violation || $veda_nmc_add_d_violation ||
@@ -3868,6 +3908,9 @@
          $veda_ocs_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
+            // RTL-18: before the permission arm, so a copy-on-write object
+            // reports "copy me" (0x0C) and never "you may not write" (0x13).
+            $veda_cow_write            ? 5'h0C :
             !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_bounds_ok                       ? 5'h01 :
                                                       5'h0A;
@@ -3881,6 +3924,9 @@
          $veda_ocsc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
+            // RTL-18: before the permission arm, so a copy-on-write object
+            // reports "copy me" (0x0C) and never "you may not write" (0x13).
+            $veda_cow_write            ? 5'h0C :
             !$veda_perm_store_ok                   ? 5'h13 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
@@ -3894,6 +3940,9 @@
             // fired with the wrong cause would send a copy-on-write handler
             // after the wrong repair.
             !$veda_perm_load_ok                    ? 5'h12 :
+            // RTL-18: before the permission arm, so a copy-on-write object
+            // reports "copy me" (0x0C) and never "you may not write" (0x13).
+            $veda_cow_write            ? 5'h0C :
             !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_nmc_bounds_ok_w                 ? 5'h01 :
                                                       5'h0A;
@@ -3906,6 +3955,9 @@
             // fired with the wrong cause would send a copy-on-write handler
             // after the wrong repair.
             !$veda_perm_load_ok                    ? 5'h12 :
+            // RTL-18: before the permission arm, so a copy-on-write object
+            // reports "copy me" (0x0C) and never "you may not write" (0x13).
+            $veda_cow_write            ? 5'h0C :
             !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
                                                       5'h0A;
@@ -3918,6 +3970,9 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
+            // RTL-18: before the permission arm, so a copy-on-write object
+            // reports "copy me" (0x0C) and never "you may not write" (0x13).
+            $veda_cow_write            ? 5'h0C :
             !$veda_perm_store_ok                   ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
                                                       5'h0A;
@@ -4029,6 +4084,7 @@
                              $veda_odt_populate_violation ||
                              $veda_odt_destroy_violation ||
                              $veda_odt_set_domain_violation ||
+                             $veda_odt_set_cow_violation ||
                              $is_ecall;
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: a general ILLEGAL-INSTRUCTION umbrella.
@@ -4067,7 +4123,8 @@
                                 $veda_odt_page_in_refusal ||
                                 $veda_odt_populate_violation ||
                                 $veda_odt_destroy_violation ||
-                                $veda_odt_set_domain_violation;
+                                $veda_odt_set_domain_violation ||
+                                $veda_odt_set_cow_violation;
          $veda_trap_cause[4:0] =
             // RTL-4: 0x09 MUST precede the $veda_bind_trap arm, and that
             // ordering is mandatory rather than stylistic. A non-resident
@@ -5368,6 +5425,11 @@
          // and here "preserve" is expressed by the ABSENCE of a write, which no
          // compiler checks. Stated here so the absence is deliberate and
          // documented rather than accidental.
+         // RTL-18: and cow is CLEARED. The reset pre-zero is the right default for
+         // a fresh table, but Populate may reuse a slot whose previous object
+         // was copy-on-write -- without this, the new object would be born
+         // copy-on-write and its first write would fault for no reason.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_COW] <= 8'h00;
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= VEDA_DOMAIN_ANY[7:0];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= VEDA_DOMAIN_ANY[15:8];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, VEDA_DOMAIN_ANY[19:16]};
@@ -5462,6 +5524,12 @@
       // Gated on id_match for the same reason Destroy is (RTL-10): this core
       // indexes by slot, so without the tag a policy meant for one object
       // would land on whichever object actually occupies that slot.
+      // RTL-18: set.cow writes ONE BIT and nothing else -- above all it does not
+      // bump the generation. id_match gated for the same reason set.domain and
+      // Destroy are: this core indexes by slot, so without the tag a policy
+      // meant for one object lands on whichever object occupies that slot.
+      end else if (act4_mode && CPU_is_veda_odt_set_cow_a0 && !CPU_veda_odt_set_cow_violation_a0 && CPU_veda_odt_idx_ok_a0 && CPU_veda_odt_id_match_a0) begin
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_COW] <= {7'b0, CPU_rs2_data_a0[0]};
       end else if (act4_mode && CPU_is_veda_odt_set_domain_a0 && !CPU_veda_odt_set_domain_violation_a0 && CPU_veda_odt_idx_ok_a0 && CPU_veda_odt_id_match_a0) begin
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= CPU_rs2_data_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= CPU_rs2_data_a0[15:8];
