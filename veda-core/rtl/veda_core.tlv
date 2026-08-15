@@ -1444,10 +1444,60 @@
          // $veda_capmem_granule -- SandPiper's own order-independent
          // elaboration within this @0 stage, already relied on
          // throughout this file, makes the forward reference safe).
+         // ─────────────────────────────────────────────────────────
+         //  R21 FIX 1 (DESIGN_07): an access that will NOT happen must not
+         //  buy latency for it. Before this, the only trap term here was
+         //  !$veda_pcc_violation -- a FETCH-side check. The comment above
+         //  already states exactly why that guard exists ("a faulting fetch
+         //  must not spuriously start a stall that would then eat into the
+         //  trap-handling flow"); it was simply never extended to the
+         //  DATA-side violations, and that omission is a fail-open
+         //  compartment escape at DRAM_EXTRA_CYCLES != 0:
+         //
+         //    an OCL.C/OCS.C (or bind) that BOTH violates AND misses the TCM
+         //    started a stall; $pc line ~1039 ranks >>1$veda_dram_busy ABOVE
+         //    >>1$pc_src, and $instr is forced to NOP for every stall cycle
+         //    (so $pc_src reads 0 out of all of them), so the trap's own
+         //    mtvec redirect was DISCARDED and execution resumed at pc+4 --
+         //    while every trap STATE effect still fired, including
+         //    $veda_pcc_length := 40'hFFFFFFFFFF (UNBOUNDED),
+         //    $veda_pcc_base := 0, $veda_current_region := 0 and
+         //    $veda_pcc_object := VEDA_OBJECT_NONE. The attacker keeps
+         //    running its own instruction stream with the compartment
+         //    bound removed.
+         //
+         //  The bind arm needs ALL FOUR of its refusal terms, not just
+         //  $veda_bind_trap: $bind_wr_en (~line 2424) gates on bind_trap,
+         //  domain_violation, region_fault AND residency_fault, and
+         //  $veda_bind_trap alone is only owner||notfound (line 1974).
+         //  Gating on bind_trap alone would leave three of the four escape
+         //  paths open -- checked against $bind_wr_en's own term list
+         //  rather than assumed.
+         //
+         //  This edit is strictly monotone: it only ever REMOVES stalls,
+         //  and only on paths that trap anyway. It cannot create a stall
+         //  that did not exist, so it cannot open a new escape.
+         //
+         //  All referenced signals are @0, same stage as this expression
+         //  (verified by stage-marker scan, not assumed): domain_violation
+         //  :1971, bind_trap :1974, region_fault :2004, residency_fault
+         //  :2027, oclc_violation :3083, ocsc_violation :3084. Forward
+         //  reference within @0 is order-independent under SandPiper, as
+         //  this file already relies on for $veda_capmem_tcm_hit above.
+         //
+         //  NOT YET SIMULATED -- see R21 FIX 2 and the test named in
+         //  DESIGN_07. iverilog is absent from this machine, so this fix is
+         //  hand-verified against the RTL only. Do not credit it as proven.
+         // ─────────────────────────────────────────────────────────
          $veda_dram_stall_req =
             !$veda_pcc_violation && !(>>1$veda_dram_busy) &&
-            ((($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind) && !$veda_odt_tcm_hit) ||
-             (($is_veda_ocl_c || $is_veda_ocs_c) && !$veda_capmem_tcm_hit));
+            ((($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
+                 && !$veda_odt_tcm_hit
+                 && !$veda_bind_trap && !$veda_domain_violation
+                 && !$veda_region_fault && !$veda_residency_fault) ||
+             (($is_veda_ocl_c || $is_veda_ocs_c)
+                 && !$veda_capmem_tcm_hit
+                 && !$veda_oclc_violation && !$veda_ocsc_violation));
          // Same-cycle load (NOT >>1$veda_dram_stall_req) -- loading on the
          // >>1-delayed request would add one extra spurious cycle before
          // the counter reflects the real remaining wait, the exact
