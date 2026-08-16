@@ -64,6 +64,61 @@ if [ ! -f "$SIM/veda_core.sv" ]; then
   exit 3
 fi
 
+# Assemble every smoke test from source. This step did not exist: sim/*.hex is
+# gitignored (.gitignore:38) and NOTHING in the repository rebuilt it, so the
+# whole suite ran only on a machine where the hex files happened to survive
+# from a hand-typed gcc invocation. On a fresh clone every vvp below would have
+# failed for want of an input the tree cannot produce -- 87 tests that could not
+# be reproduced by anyone else, which for a security corpus is the same as not
+# having them.
+#
+# The toolchain is the project's OWN, resolved the same way sail_tests/
+# run_veda_selfcheck_tests.sh resolves it. The hand-typed invocations that had
+# been keeping this going reached into a DIFFERENT project's tree
+# (rva23-core/toolchain), which is frozen and is not a dependency this line is
+# entitled to have.
+TC="$(cd ../.. && pwd)/toolchain/riscv-collab-gcc/riscv/bin"
+GCC="$TC/riscv64-unknown-elf-gcc"
+OBJCOPY="$TC/riscv64-unknown-elf-objcopy"
+if [ ! -x "$GCC" ]; then
+  echo "FATAL: project toolchain not found at $GCC" >&2
+  echo "  The Veda-Core line is self-contained: run ./toolchain/setup.sh gnu-toolchain" >&2
+  exit 2
+fi
+echo "==> Assembling smoke tests from source"
+asm_fail=0
+for src in "$SIM"/veda_smoke_*.S; do
+  base="${src%.S}"
+  # The preprocessor stays ON, which is what a .S extension selects. Both
+  # settings were MEASURED rather than reasoned about, and each breaks a
+  # different set: with cpp OFF, 41 tests fail because the corpus writes its
+  # comments with // and only the preprocessor strips those. With cpp ON,
+  # exactly three failed on prose that happens to parse as C -- an "# if Offset
+  # would land >= Length" read as a directive, and two headers naming
+  # rtl/sim/*.S, where sim/* opens a C comment that never closes. Three comment
+  # lines were reworded; 34 sources were not. sail_tests/ invokes `as` directly
+  # and so never had either problem.
+  # -T sim/veda_smoke_test.ld, NOT a bare -Ttext=0x80000000. The script was
+  # already in the tree, unreferenced by anything, and the difference is not
+  # cosmetic: -Ttext alone lets the linker page-align .data, which lands it a
+  # full 0x1000 past the end of .text, while the script places it immediately
+  # after. FIVE tests fail with the gap and pass without it -- the paging,
+  # scheduler, cross-thread and two syscall0 tests, which are exactly the five
+  # in this corpus with a non-empty .data. Found by rebuilding every image from
+  # source for the first time and watching those five go red.
+  if ! "$GCC" -march=rv64i_zicsr -mabi=lp64 -nostdlib -nostartfiles \
+       -T "$SIM/veda_smoke_test.ld" -o "$base.elf" "$src" 2>"$base.aserr"; then
+    echo "  ASM-FAIL $(basename "$src")"; sed 's/^/    /' "$base.aserr" | head -5
+    asm_fail=$((asm_fail+1)); continue
+  fi
+  "$OBJCOPY" -O verilog "$base.elf" "$base.hex"
+done
+if [ "$asm_fail" -ne 0 ]; then
+  echo "FATAL: $asm_fail smoke test(s) failed to assemble -- refusing to run a partial suite" >&2
+  exit 4
+fi
+echo "    $(ls "$SIM"/veda_smoke_*.hex | wc -l) images built"
+
 echo "==> Compiling with Icarus Verilog (positive test)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke.sv"
 echo "==> Simulating (positive test)"
@@ -414,6 +469,11 @@ echo "==> RTL-7: Compiling (R11 crossing revalidation, negative)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r11_crossing_neg.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
+
+echo "==> R26: Compiling (compartment authority follows the NAME, not the bound)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r26.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r26_authority.sv"
+echo "==> Simulating (R26 sentinel-Length compartment escape)"
+vvp "$SIM/sim_r26.vvp" +elf_hex="$SIM/veda_smoke_r26_authority.hex"
 
 echo "==> R27: Compiling (privilege gate on the PCC/MEPCC CSRs)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r27.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r27_csr_priv.sv"

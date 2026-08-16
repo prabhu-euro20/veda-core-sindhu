@@ -24,7 +24,7 @@ _start:
     #     bounds.
     #
     # Object_IDs 140-146, grep-audited fresh against every existing
-    # rtl/sim/*.S Object_ID literal before picking (100-102/110-123 are
+    # Object_ID literal in the rtl/sim assembly sources before picking
     # the only ones in use; 140-146 is a clean, unused block).
     #   140 = shared type-authority (Seal|Unseal), reused across phases
     #   141/142 = Phase 1 CODE/DATA   143/144 = Phase 2 CODE/DATA

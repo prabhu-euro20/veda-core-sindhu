@@ -16,7 +16,7 @@ _start:
     # Object_ID=51: type-authority object, Perms=Seal|Unseal=0x0300,
     # Length=0xFFFF (generous enough to keep Offset=0xFFFE genuinely
     # in-bounds after the OCA walk -- OCA soft-fails, clearing the tag,
-    # if Offset would land >= Length).
+    # when Offset would land >= Length).
     # ─────────────────────────────────────────────────────────────
     li   x1, 51
     li   x2, 0x80051000FFFF0300

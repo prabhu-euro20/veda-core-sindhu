@@ -31,7 +31,7 @@
 # in this file set.
 #
 # Object_IDs 130-134, grep-audited fresh against every existing
-# rtl/sim/*.S Object_ID literal before picking (100-102/110-123/140-152
+# Object_ID literal in the rtl/sim assembly sources (100-102/110-123/140-152
 # are the only ones in use; 130-134 is a clean, unused block within the
 # already-established 100-199 free range -- this is the exact block the
 # approved plan reserved for this test).
