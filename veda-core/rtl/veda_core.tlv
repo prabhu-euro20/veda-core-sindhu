@@ -4008,68 +4008,90 @@
          //  same principle -- a misaligned access would not have succeeded
          //  either, so residency is not the useful thing to report.
          // ─────────────────────────────────────────────────────────
+         // R19 increment 1 -- THE ORDER OF THIS CHAIN IS THE SECURITY PROPERTY.
+         // Two classes of arm. REFUSALS (0x02 0x03 0x12 0x13 0x1f 0x08 0x01) say
+         // "never allowed"; order among them is cosmetic. REPAIRS (0x0A residency,
+         // 0x0C copy-on-write) say "fix something and retry", and each ARMS REAL
+         // WORK in a handler -- a page-in, or an allocate-copy-mint. Raising a
+         // repair for an access a refusal was going to reject anyway arms that
+         // work for nothing. So every refusal precedes every repair. That rule was
+         // already written down here for residency ("raised only for an access
+         // that would otherwise have SUCCEEDED"); the cow arm violated it from the
+         // day it landed, sitting third.
+         //
+         // 0x0A BEFORE 0x0C: you cannot copy an object that is not in memory --
+         // the handler would dereference a Base whose frame the pager may already
+         // have reassigned.
+         //
+         // The 0x13 arm is GATED on !$veda_cow_write. Without the gate, moving cow
+         // to the bottom breaks fork() outright: veda_bind_perms masks a cow
+         // object's Perms with 16'hFFF7, so a freshly bound capability lacks store
+         // BY CONSTRUCTION and every fork write would report "you may not write"
+         // instead of "copy me". The old order's property is preserved exactly --
+         // by the gate rather than by precedence.
+         //
+         // The DEFAULT IS DELIBERATELY HOSTILE (5'h02), never 0x0C. 0x0C is the
+         // only cause that tells software to hand back a fresh writable object: a
+         // spurious 0x0A makes the pager refuse loudly, a spurious 0x0C succeeds
+         // SILENTLY. All arms explicit, all seven chains one shape, diffable
+         // against Sail arm for arm.
+         //
+         // The trap SET is provably unchanged, so the violation OR-expressions are
+         // untouched -- they also feed R21's stall gate, and restructuring one is
+         // the single way this edit could reopen R21:
+         //   old (cow) | (!STORE)  ==  new (!STORE & !cow) | (cow)
          $veda_ocl_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
             !$veda_bounds_ok                       ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+                                                      5'h02;
          $veda_ocs_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
-            // RTL-18: before the permission arm, so a copy-on-write object
-            // reports "copy me" (0x0C) and never "you may not write" (0x13).
-            $veda_cow_write            ? 5'h0C :
-            !$veda_perm_store_ok                   ? 5'h13 :
+            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
             !$veda_bounds_ok                       ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+            $veda_cow_write                        ? 5'h0C :
+                                                      5'h02;
          $veda_oclc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+                                                      5'h02;
          $veda_ocsc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
-            // RTL-18: before the permission arm, so a copy-on-write object
-            // reports "copy me" (0x0C) and never "you may not write" (0x13).
-            $veda_cow_write            ? 5'h0C :
-            !$veda_perm_store_ok                   ? 5'h13 :
+            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+            $veda_cow_write                        ? 5'h0C :
+                                                      5'h02;
          $veda_nmc_add_w_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
-            // RTL-13: ordered to match the Sail clause term for term --
-            // NMC_Compute, then Load, then Store, then bounds. A refusal that
-            // fired with the wrong cause would send a copy-on-write handler
-            // after the wrong repair.
             !$veda_perm_load_ok                    ? 5'h12 :
-            // RTL-18: before the permission arm, so a copy-on-write object
-            // reports "copy me" (0x0C) and never "you may not write" (0x13).
-            $veda_cow_write            ? 5'h0C :
-            !$veda_perm_store_ok                   ? 5'h13 :
+            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
             !$veda_nmc_bounds_ok_w                 ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+            $veda_cow_write                        ? 5'h0C :
+                                                      5'h02;
          $veda_nmc_add_d_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
-            // RTL-13: ordered to match the Sail clause term for term --
-            // NMC_Compute, then Load, then Store, then bounds. A refusal that
-            // fired with the wrong cause would send a copy-on-write handler
-            // after the wrong repair.
             !$veda_perm_load_ok                    ? 5'h12 :
-            // RTL-18: before the permission arm, so a copy-on-write object
-            // reports "copy me" (0x0C) and never "you may not write" (0x13).
-            $veda_cow_write            ? 5'h0C :
-            !$veda_perm_store_ok                   ? 5'h13 :
+            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+            $veda_cow_write                        ? 5'h0C :
+                                                      5'h02;
          // Atomic reuses veda_check_access with need_load=need_store=
          // true -- Sail checks Permit_Load before Permit_Store in that
          // case (veda_ocl_insts.sail's own if-else chain), so a missing
@@ -4079,12 +4101,11 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
-            // RTL-18: before the permission arm, so a copy-on-write object
-            // reports "copy me" (0x0C) and never "you may not write" (0x13).
-            $veda_cow_write            ? 5'h0C :
-            !$veda_perm_store_ok                   ? 5'h13 :
+            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
-                                                      5'h0A;
+            $veda_deref_nonresident                ? 5'h0A :
+            $veda_cow_write                        ? 5'h0C :
+                                                      5'h02;
 
          // One combined trap-taken signal + cause mux across every real
          // hard-trapping family. cap_idx is NOT muxed per-family -- all
