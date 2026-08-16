@@ -4781,7 +4781,16 @@
          // only thing preventing an attacker's csr_wdata from landing
          // while a compartment is live.
          $veda_mode[31:0] = $reset ? 32'b0 :
-                              (>>1$csr_write_en && >>1$csr_is_veda_mode && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[31:0] :
+                              // R26 Lever B: the PRIVILEGE half of this gate was missing.
+                              // Sail's write_CSR(0x7C5) is `if pcc_length != UNBOUNDED then Err
+                              // else if cur_privilege == Machine then veda_mode = ...`, so a
+                              // non-Machine write is a silent no-op that leaves the register
+                              // unchanged. This layer checked only the PCC-bounds half, so a
+                              // post-droppriv, unbounded-PCC principal could clear purecap here
+                              // while being refused at Populate (:2281, which does carry $priv).
+                              // Gating the write-enable rather than raising a violation is the
+                              // exact parity choice -- Sail neither traps nor writes.
+                              (>>1$csr_write_en && >>1$csr_is_veda_mode && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[31:0] :
                                                                             >>1$veda_mode;
 
          // OCA is deliberately absent here -- its destination (rd) is a
