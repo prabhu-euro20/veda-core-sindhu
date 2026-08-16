@@ -2795,7 +2795,20 @@
                                             ? (|cpu>>1$veda_odt_cow ? (|cpu>>1$veda_odt_perms & 16'hFFF7)
                                                                     : |cpu>>1$veda_odt_perms)
                                             : 16'b0) :
-                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_perms :
+                           // R23 FIX: Rebind must attenuate exactly as Bind does.
+                           // The comment above says "a copy-on-write object never
+                           // hands out store permission, however often it is
+                           // bound" -- and three lines below it, the Rebind arm
+                           // handed out $veda_odt_perms verbatim with no cow test,
+                           // so the file contradicted its own stated intent. Sail
+                           // masks BOTH paths (veda_bind_insts.sail:308 and :341
+                           // via veda_bind_perms, veda_regs.sail:822-823), so this
+                           // was an RTL-only divergence. Same shape as the CAndPerm
+                           // defect: a derivation arm that silently kept a right
+                           // the neighbouring arm strips.
+                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok)
+                              ? (|cpu>>1$veda_odt_cow ? (|cpu>>1$veda_odt_perms & 16'hFFF7)
+                                                      : |cpu>>1$veda_odt_perms) :
                            $candperm_wr_en ? (|cpu>>1$veda_rs1cap_perms & |cpu>>1$rs2_data[15:0]) :
                            ($oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en) ? |cpu>>1$veda_rs1cap_perms :
                            $oclc_wr_en ? |cpu>>1$veda_oclc_unpacked_perms :
@@ -3125,7 +3138,28 @@
          //  store is touched.
          // ─────────────────────────────────────────────────────────
          // RTL-16 (R18): same widening, same reason -- see $veda_bounds_ok above.
-         $veda_oclc_bounds_ok = (({1'b0, $rs2_data} + 65'd16) <= {25'b0, $veda_rs1cap_length});
+         //
+         // R23 FIX: the width was 65'd16 and the access is 32 BYTES. An OCL.C /
+         // OCS.C moves a whole 256-bit capability -- $veda_ocsc_packed[255:0]
+         // (:3215), $veda_oclc_load_data[255:0] (:4994, whose own comment reads
+         // "a capability is 32 bytes now -- both arms read 32, not 16"), and the
+         // elfmem store extent +0..+31 -- while this check only ever asked
+         // whether SIXTEEN bytes fit. Sail has always passed 32
+         // (veda_ocl_insts.sail:188 and :224), so this was RTL-only.
+         //
+         // The hole: for an object of Length L, offset L-16 satisfies
+         // (L-16)+16 <= L, so the check PASSES -- and the access then reads or
+         // writes through Base+L+15, sixteen bytes PAST the object, with a
+         // valid capability and no trap. A real out-of-object write primitive,
+         // not merely a mis-reported cause.
+         //
+         // Found while grounding the R19 check-reorder: that reorder promises
+         // "an out-of-bounds store to a copy-on-write object reports 0x01 and
+         // never arms a copy", and this width made that promise false by 16
+         // bytes on the capability chains. Fixed FIRST, on its own, because it
+         // is a spatial-safety defect in its own right and would otherwise ship
+         // inside an ordering change whose tests are not looking for it.
+         $veda_oclc_bounds_ok = (({1'b0, $rs2_data} + 65'd32) <= {25'b0, $veda_rs1cap_length});
          // RTL-2a: 32-byte natural alignment is architectural for capability
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.
