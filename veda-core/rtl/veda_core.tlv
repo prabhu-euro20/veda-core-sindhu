@@ -4388,7 +4388,17 @@
             ($csr_is_veda_pcc_base || $csr_is_veda_pcc_length ||
              $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
              $csr_is_veda_mode || $csr_is_mtvec) &&
-            ($veda_pcc_length != 40'hFFFFFFFFFF);
+            (($veda_pcc_length != 40'hFFFFFFFFFF) ||
+                                          // R26: authority is a NAME, not a bound. This one
+                                          // comparator covers all six Sail authority sites
+                                          // (0x7C0-0x7C3, 0x7C5 and mtvec), which this layer
+                                          // fuses into a single OR-list. ADDED, never
+                                          // substituted -- see the Sail header. A capability
+                                          // naming NONE cannot cross either domain crossing,
+                                          // because both check RT residency first and NONE's
+                                          // region field is out of the modeled window, so the
+                                          // name is unforgeable where the Length was not.
+                                          ($veda_pcc_object != VEDA_OBJECT_NONE));
          `BOGUS_USE($csr_rdata)
          `BOGUS_USE($csr_wdata)
 
@@ -4562,6 +4572,23 @@
          //  non-Machine write is a silent no-op, register holds, read-back
          //  returns the unchanged value.
          // ─────────────────────────────────────────────────────────
+         // ─────────────────────────────────────────────────────────
+         //  R28 -- THE ESCAPE VIOLATION TRAPPED BUT DID NOT SUPPRESS THE WRITE.
+         //  $veda_csr_escape_violation already listed all six CSRs, and it
+         //  correctly raised a trap. But only ONE of the five write-enables --
+         //  $veda_mode -- ever consulted it. For 0x7C0-0x7C3 the trap fired AND
+         //  the register changed: a compartment could rewrite its own PCC bounds
+         //  or forge its trap return, take the trap, and keep the write.
+         //  Sail is fail-closed here by construction: write_CSR returns Err(())
+         //  before any assignment, so nothing is written. RTL-only divergence,
+         //  and the same fail-open shape as R21 -- the refusal was raised and
+         //  the effect happened anyway.
+         //  Found by the R26 authority test: from inside a sentinel-Length
+         //  compartment the mtvec write was refused while the 0x7C3 write landed,
+         //  which is only possible if the two are gated differently.
+         //  "Applied to four of five arms" for the fourth time in this project,
+         //  and the first time in code nobody had just edited.
+         // ─────────────────────────────────────────────────────────
          $veda_pcc_base[55:0] = $reset ? 56'b0 :
                                  (>>1$veda_trap_taken) ? 56'b0 :
                                  // RTL-8 (R12): occupancy is out of band now. depth==1 means this is
@@ -4576,7 +4603,7 @@
                                  (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 56'b0 : 56'b0) :
                                  (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_base :
-                                 (>>1$csr_write_en && >>1$csr_is_veda_pcc_base && >>1$priv) ? >>1$csr_wdata[55:0] :
+                                 (>>1$csr_write_en && >>1$csr_is_veda_pcc_base && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[55:0] :
                                                                                    >>1$veda_pcc_base;
          // ─────────────────────────────────────────────────────────
          //  RTL-4: the Current-Region Base Register (CRBR), DESIGN_08
@@ -4678,7 +4705,7 @@
                                    (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 40'b0 : 40'hFFFFFFFFFF) :
                                    (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_length :
-                                   (>>1$csr_write_en && >>1$csr_is_veda_pcc_length && >>1$priv) ? >>1$csr_wdata[39:0] :
+                                   (>>1$csr_write_en && >>1$csr_is_veda_pcc_length && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[39:0] :
                                                                                        >>1$veda_pcc_length;
          // Real bug found (not copied blindly from Sail) while designing
          // this mirror: the pre-existing trap-time capture below was
@@ -4736,19 +4763,19 @@
          //  the chain stops being countable, so it stops being reconstructible.
          $veda_trap_poison = $reset ? 1'b0 :
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'b0) &&
-                               ((>>1$veda_pcc_length != 40'hFFFFFFFFFF) || (>>1$veda_current_region != 20'b0))) ? 1'b1 :
+                               ((>>1$veda_pcc_length != 40'hFFFFFFFFFF) || (>>1$veda_current_region != 20'b0) || (>>1$veda_pcc_object != VEDA_OBJECT_NONE))) ? 1'b1 :
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'hFF)) ? 1'b1 :
                               ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
                                                                                         >>1$veda_trap_poison;
          $veda_mepcc_base[55:0] = $reset ? 56'b0 :
                                    (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_base :
                                    ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
-                                   (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base && >>1$priv) ? >>1$csr_wdata[55:0] :
+                                   (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[55:0] :
                                                                                        >>1$veda_mepcc_base;
          $veda_mepcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_length :
                                      ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
-                                     (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length && >>1$priv) ? >>1$csr_wdata[39:0] :
+                                     (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
          // RTL-9 (R11(b)): the name PCC is running under. Mirrors Sail's
          // veda_pcc_object exactly, arm for arm, including which arms are
