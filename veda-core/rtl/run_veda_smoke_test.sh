@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> PCA: Compiling (load permission, alignment, copy-on-write -- isolated)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_pca.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_perm_cow_align.sv"
+echo "==> Simulating (perm/align/cow isolated)"
+vvp "$SIM/sim_pca.vvp" +elf_hex="$SIM/veda_smoke_perm_cow_align.hex"
+
 echo "==> GUARDS: Compiling (sealed on six paths + bounds as a trap decision)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_guards.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_deref_guards.sv"
 echo "==> Simulating (deref guards: sealed, bounds-as-trap)"

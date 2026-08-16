@@ -16,7 +16,11 @@ _start:
     .insn r 0x5b, 0x0, 0x07, x3, x2, x0
     sd   x3, 16(x31)
     li   x4, 0x0004
-    .insn r 0x5b, 0x0, 0x17, x5, x1, x4
+    # NOTE funct3 is 001 for CAndPerm. A first draft used 000, which decodes as
+# nothing -- and the probe still reported AGREE, because BOTH layers did the
+# same no-op. A differential probe that agrees can still be vacuous; that is
+# the harness's one real blind spot and it is worth remembering.
+    .insn r 0x5b, 0x1, 0x17, x5, x1, x4
     .insn r 0x5b, 0x0, 0x02, x3, x5, x0
     sd   x3, 24(x31)
     .insn r 0x5b, 0x0, 0x07, x3, x5, x0
