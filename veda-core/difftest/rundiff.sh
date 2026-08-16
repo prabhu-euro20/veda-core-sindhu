@@ -18,7 +18,7 @@ RTLSIM=/home/prabhu/veda-core-sindhu/veda-core/rtl/sim
 "$SIM" --config "$CFG" --inst-limit 2000000 --test-signature "$D/$NAME.sail.sig" "$D/$NAME.elf" >"$D/$NAME.sail.out" 2>&1
 vvp "$D/sim_diff.vvp" +elf_hex="$D/$NAME.hex" +sigout="$D/$NAME.rtl.sig" >"$D/$NAME.rtl.out" 2>&1
 
-head -8 "$D/$NAME.sail.sig" > "$D/$NAME.s8"; head -8 "$D/$NAME.rtl.sig" > "$D/$NAME.r8"
+head -192 "$D/$NAME.sail.sig" > "$D/$NAME.s8"; head -192 "$D/$NAME.rtl.sig" > "$D/$NAME.r8"
 if diff -q "$D/$NAME.s8" "$D/$NAME.r8" >/dev/null 2>&1; then
   echo "AGREE     $NAME"
 else

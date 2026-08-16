@@ -6,7 +6,7 @@
 // directly. It asserts NOTHING: divergence is the finding, not failure.
 module tb;
   localparam int unsigned SIG_BASE  = 32'h8007_0000;
-  localparam int unsigned SIG_BYTES = 64;
+  localparam int unsigned SIG_BYTES = 768;
   localparam int unsigned RUN_CYC   = 3000;
   logic clk = 0; logic reset; logic [31:0] cyc_cnt = 0; wire passed, failed;
   top dut(.clk(clk), .reset(reset), .cyc_cnt(cyc_cnt), .passed(passed), .failed(failed));
