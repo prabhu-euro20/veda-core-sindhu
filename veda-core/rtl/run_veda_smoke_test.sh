@@ -415,6 +415,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> R27: Compiling (privilege gate on the PCC/MEPCC CSRs)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r27.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r27_csr_priv.sv"
+echo "==> Simulating (R27 CSR privilege gate)"
+vvp "$SIM/sim_r27.vvp" +elf_hex="$SIM/veda_smoke_r27_csr_priv.hex"
+
 echo "==> PCA: Compiling (load permission, alignment, copy-on-write -- isolated)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_pca.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_perm_cow_align.sv"
 echo "==> Simulating (perm/align/cow isolated)"
