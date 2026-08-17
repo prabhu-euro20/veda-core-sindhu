@@ -24,6 +24,8 @@ p1_queries.S            AGREE      the metadata query family
 p2_derive.S             DIVERGE    R30: this probe's last instruction is an UNDEFINED
 p3_faults.S             DIVERGE    R24 open half, second sighting: word 6 is mtval from
 p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
+p5_reserved.S           DIVERGE    R30: three classes of unallocated encoding that Sail
+p6_overbroad.S          DIVERGE    R30(b): over-broad decoders -- fail-open ACTIVE, not silent
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -47,6 +49,31 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 # c11 is a sealed region-2 capability whose generation is stale; the RTL's is
 # the residency fixture. Same root cause as p_reset_crf, seen through a second
 # probe, and it closes when the fixtures leave the architectural reset.
+#
+# p5_reserved measures three DISTINCT classes of unallocated encoding, all
+# retired as no-ops here and all refused by Sail:
+#   veda.bind mode 0b11 -- NOT merely undefined. veda_bind_insts.sail:276 maps
+#     VEDA_BIND_RESERVED to Illegal_Instruction() BY NAME, and veda_core.tlv
+#     decodes only modes 00/01/10 with no arm for 11 at all.
+#   custom-0 funct3=000 funct7=0001010 -- 125 of 128 funct7 values unallocated.
+#   custom-2 funct3=111 -- the whole funct3 is unallocated.
+# Its control proves a LEGAL encoding still does not trap, so a layer that
+# simply refused everything could not pass it.
+#
+# p6_overbroad is the worse half, and it is NOT about no-ops. Here the RTL
+# decodes encodings the architecture never allocated and executes them AS A
+# DEFINED INSTRUCTION. Measured:
+#   veda.bind with imm[11:2] != 0 MINTS A CAPABILITY on this layer -- cgettag
+#     reads 1 -- while Sail refuses the instruction outright. 1023 of 1024
+#     upper-immediate patterns, on the capability-minting path.
+#   OSpecialRW with an SCR selector outside {ODA,TSC,SSC} performs the ODA swap.
+#     Machine-mode only, so NOT an unprivileged escalation -- an unallocated
+#     encoding operating an authority register, which is bad enough.
+#   droppriv ignores funct3 entirely, so all 8 values clear $priv.
+#   the atomic op-select case is the one the RTL already guards, and the probe
+#     records that too rather than assuming it alongside the others.
+#
+# Both flip to AGREE when the decode-completeness catch-all lands. DESIGN_07 R30.
 
 pass=0; fail=0; results=()
 while read -r probe expected _rest; do
