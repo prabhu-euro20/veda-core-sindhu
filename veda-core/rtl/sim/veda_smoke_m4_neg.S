@@ -1,3 +1,4 @@
+#include "veda_priv_macros.h"
 .section .text
 .global _start
 _start:
@@ -22,7 +23,7 @@ _start:
     la   x7, trap_handler
     csrw mtvec, x7
     li   x20, 0
-    .insn r 0x7b, 0x0, 0x00, x0, x0, x0  # veda.droppriv   -- $priv: 1 -> 0, one-way
+    VEDA_DROP_TO_USER(x28, x29)   // R36: the architected drop -- mstatus.MPP=U then mret
 
     li   x1, 5                       # Object_ID = 5 (never seeded at reset)
     li   x2, 0x800103000040100C      # attempted descriptor -- must never actually land

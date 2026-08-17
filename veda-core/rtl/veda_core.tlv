@@ -1056,13 +1056,41 @@
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE RTL MILESTONE 4: minimal real privilege state.
          //  Resets to 1 (privileged), matching real RISC-V's own "harts
-         //  reset into the highest privilege level" convention. One-way:
-         //  only `veda.droppriv` (decoded below) can clear it; nothing
-         //  raises it back (MILESTONE_PLAN.md's own Milestone 4 addendum
-         //  has the full reasoning). Same simple stateful-signal idiom
-         //  already used for $cyc_cnt above, not a new one.
+         //  reset into the highest privilege level" convention.
+         //
+         //  ═══ R36/R39: THIS REGISTER NOW FOLLOWS THE PRIVILEGED SPEC ═══
+         //
+         //  It used to read:
+         //      $priv = $reset ? 1'b1 : (>>1$is_veda_droppriv ? 1'b0 : >>1$priv);
+         //  Set at reset, cleared once by a custom instruction, restored by
+         //  nothing. Milestone 4's addendum argued for that one-way drop on one
+         //  stated ground: "real mret is a trap-return semantic this core has no
+         //  trap to return from". MILESTONE 9 BUILT THE TRAPS AND MRET. The
+         //  premise expired and the instruction outlived it -- and Sail never
+         //  had `veda.droppriv` or the Custom-3 opcode at all, zero mentions in
+         //  the whole model.
+         //
+         //  Now the standard mechanism, which Sail already implements and which
+         //  therefore needed no specification work at all -- the RTL moved to
+         //  the model, not the model to the RTL:
+         //    trap -> MPP = current privilege, privilege = Machine
+         //    mret -> privilege = MPP        (and MRET below Machine is illegal)
+         //  Software drops privilege by writing mstatus.MPP = 0b00 and executing
+         //  mret, exactly as every other RISC-V hart does.
+         //
+         //  WHY IT HAD TO CHANGE TOGETHER WITH THE CSR PRIVILEGE CHECK: with a
+         //  generic check in place and no trap-raises-privilege, a handler
+         //  entered after a drop could not `csrr mepc` and could not `mret` --
+         //  every post-drop trap would livelock. The two are one increment.
          // ─────────────────────────────────────────────────────────
-         $priv = $reset ? 1'b1 : (>>1$is_veda_droppriv ? 1'b0 : >>1$priv);
+         $priv = $reset               ? 1'b1 :
+                 (>>1$veda_trap_taken) ? 1'b1 :
+                 // MRET only acts when it is legal; below Machine it is an
+                 // illegal instruction ($mret_priv_violation) and must not be
+                 // allowed to install MPP into $priv -- that would be the
+                 // escalation this whole increment exists to prevent.
+                 (>>1$mret_ok) ? >>1$mstatus_mpp[1] :
+                 >>1$priv;
 
          // ─────────────────────────────────────────────────────────
          //  PROGRAM COUNTER — same one-extra-cycle-after-reset handling
@@ -1269,6 +1297,13 @@
          $is_csr_imm = $is_csrrwi || $is_csrrsi || $is_csrrci;
          $is_csr_access = $is_csrrw || $is_csrrs || $is_csrrc ||
                           $is_csrrwi || $is_csrrsi || $is_csrrci;
+         // R36/R39: mstatus, the register this core needed all along. Only the
+         // three fields a machine with M and U can honestly implement are real
+         // here -- MIE (bit 3), MPIE (bit 7), MPP (bits 12:11). Everything else
+         // reads zero and ignores writes, which is exactly WARL. See $priv's own
+         // update logic for why this register had to exist before the generic
+         // CSR privilege check could ship.
+         $csr_is_mstatus = ($csr_addr == 12'h300);
          $csr_is_mtvec   = ($csr_addr == 12'h305);
          $csr_is_mscratch = ($csr_addr == 12'h340);
          $csr_is_mepc    = ($csr_addr == 12'h341);
@@ -1334,6 +1369,14 @@
          // $priv's own existing one-way-drop model) -- MRET here means
          // exactly "PC = mepc", not a full mstatus.MPP/MPIE restore.
          $is_mret = ($instr == 32'h30200073);
+         // R36: every EFFECT of MRET -- the PC redirect, the PCC/MEPCC restore,
+         // the region restore, the trap-depth decrement -- hangs off this, not
+         // off $is_mret. An MRET below Machine is an illegal instruction, and an
+         // illegal instruction must do nothing except trap. Without this the
+         // decode would still unwind a trap frame it was refused permission to
+         // unwind: $veda_trap_taken already wins the PC mux, so the jump was
+         // covered, but the eighteen state arms below were not.
+         $mret_ok = $is_mret && $priv;
 
          // RTL MILESTONE 23: ECALL -- the same fixed-literal idiom as
          // MRET above (funct12=0, rs1=rd=0, funct3=0, opcode=SYSTEM;
@@ -1901,13 +1944,17 @@
          //  repeatedly reserved for real, later growth rather than
          //  overloading an already-populated opcode.
          // ─────────────────────────────────────────────────────────
+         // R36: Custom-3 is UNCLAIMED again. It held exactly one instruction,
+         // `veda.droppriv`, and that instruction is retired -- see $priv's own
+         // update logic for the full reasoning. The opcode is deliberately left
+         // decoded-and-unused here rather than deleted, because leaving the
+         // signal visible is what makes the next reader ask whether anything
+         // still claims it; the answer is that $veda_op_claimed no longer does,
+         // so every Custom-3 encoding now falls through to $base_undef_encoding
+         // and raises Illegal_Instruction -- which is exactly what the model
+         // does with it, having never defined a Custom-3 clause at all.
          $op_is_custom3 = ($opcode == 7'b1111011);
-         // funct7 = 0000000 claims one Custom-3 slot, leaving room for
-         // more (the same "reserve, don't exhaust" principle already
-         // used for Custom-3 as a whole).
-         // R30: funct3 was never tested at all, so all eight values reached
-         // `$priv = 0` at :1020. Seven of them are encodings Sail refuses.
-         $is_veda_droppriv = $op_is_custom3 && ($funct7 == 7'b0000000) && ($funct3 == 3'b000);
+         `BOGUS_USE($op_is_custom3)
 
          // rs1/rs2/rd here are ordinary GPRs, not capability registers --
          // ODT-Populate/Destroy operate on raw Object_ID/descriptor
@@ -4464,6 +4511,11 @@
                              // join both -- one alone gives a trap with the wrong cause,
                              // or a cause with no trap.
                              $veda_undef_encoding || $base_undef_encoding || $veda_csr_undef ||
+                             // R39: the generic CSR privilege check and MRET's
+                             // own privilege gate. Both join this list AND
+                             // $veda_illegal_instr below, per the rule stated
+                             // two lines up.
+                             $csr_priv_violation || $mret_priv_violation ||
                              // R33d: EBREAK is a real synchronous exception, not
                              // an illegal instruction -- it joins the trap list
                              // but deliberately NOT $veda_illegal_instr below.
@@ -4577,7 +4629,9 @@
          //  mtval holding the exact offending word. Before this change the same
          //  omission was invisible.
          // ═══════════════════════════════════════════════════════════════════
-         $veda_op_claimed = $op_is_custom0 || $op_is_custom1 || $op_is_custom2 || $op_is_custom3;
+         // R36: custom-3 dropped from this list along with veda.droppriv. Veda
+         // claims THREE major opcodes now, which is what the model always said.
+         $veda_op_claimed = $op_is_custom0 || $op_is_custom1 || $op_is_custom2;
 
          // ═══════════════════════════════════════════════════════════════════
          //  R33b -- THE BASE ISA IS FAIL-CLOSED TOO.
@@ -4662,9 +4716,9 @@
             $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset || $is_veda_cgetobjectid ||
             $is_veda_csetbounds || $is_veda_csetboundsexact || $is_veda_oca || $is_veda_cseal ||
             $is_veda_cunseal || $is_veda_ocinvoke || $is_veda_ospecialrw || $is_veda_ocjalr ||
-            $is_veda_csealentry || $is_veda_ocreturn || $is_veda_candperm ||
-            // custom-3
-            $is_veda_droppriv;
+            $is_veda_csealentry || $is_veda_ocreturn || $is_veda_candperm;
+            // custom-3 is deliberately absent -- R36 retired its one
+            // instruction, and $veda_op_claimed no longer claims the opcode.
          $veda_undef_encoding = $veda_op_claimed && !$veda_decoded;
 
          // ═══════════════════════════════════════════════════════════════════
@@ -4688,7 +4742,7 @@
          //  write_CSR clause exists for them. This layer simply had no write
          //  path for them and ignored the attempt; now it refuses it.
          // ═══════════════════════════════════════════════════════════════════
-         $csr_addr_known = $csr_is_mtvec || $csr_is_mscratch || $csr_is_mepc || $csr_is_mcause ||
+         $csr_addr_known = $csr_is_mstatus || $csr_is_mtvec || $csr_is_mscratch || $csr_is_mepc || $csr_is_mcause ||
                            $csr_is_mtval || $csr_is_veda_pcc_base || $csr_is_veda_pcc_length ||
                            $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
                            $csr_is_veda_attr || $csr_is_veda_mode || $csr_is_veda_current_region ||
@@ -4697,9 +4751,61 @@
                             $csr_is_veda_trap_status;
          $veda_csr_undef = $is_csr_access && (!$csr_addr_known || ($csr_write_en && $csr_is_readonly));
 
+         // ═══════════════════════════════════════════════════════════════════
+         //  R39 -- THE GENERIC CSR PRIVILEGE CHECK, WHICH THIS LAYER NEVER HAD.
+         //
+         //  check_CSR() in the model is a conjunction of four independent tests.
+         //  This file had grown three of them and was missing the first:
+         //     check_CSR_access        -> $csr_is_readonly          (R32)
+         //     is_CSR_accessible       -> $csr_addr_known           (R32)
+         //     veda_allows_CSR_access  -> $veda_csr_escape_violation (M20/R26)
+         //     check_CSR_priv          -> NOTHING AT ALL, until here
+         //
+         //  The rule, transcribed rather than invented (sys/sys_control.sail:19,40):
+         //      csrPriv(csr) = csr[9..8]
+         //      check_CSR_priv(csr, p) = privLevel_to_CSR_privbits(p) >=_u csrPriv(csr)
+         //  and privLevel_to_CSR_privbits is 0b11 for Machine, 0b00 for User. So
+         //  the field is compared, not a list of addresses -- which is why this
+         //  stays correct if a U-mode CSR is ever added, and why it is written
+         //  that way here instead of as "!$priv && known-M-mode-address".
+         //
+         //  WHAT WAS REACHABLE. All fourteen CSRs this core implements live at
+         //  0x3xx or 0x7Cx, so every one of them has csrPriv = 0b11 and every one
+         //  of them was readable AND writable from unprivileged code. mtvec's
+         //  only guard was $veda_csr_escape_violation, which fires only while a
+         //  compartment is LIVE -- so unprivileged code outside a compartment
+         //  could install its own trap vector. mscratch/mepc/mcause/mtval had no
+         //  guard whatsoever.
+         //
+         //  THE EVIDENCE WAS ALREADY IN THE CORPUS, PASSING. veda_smoke_r27_csr_
+         //  priv.S drops privilege and then reads and writes 0x7C0-0x7C3,
+         //  asserting a trap count of ZERO, and its own comment calls that
+         //  "matching Sail". It matched the inner Veda write_CSR clause and
+         //  missed the generic gate that runs above it. Verified by running the
+         //  model, not by reading it: from U-mode, `csrr x10, 0x7c1` raises
+         //  Illegal_Instruction with mepc at the csrr itself.
+         //
+         //  READS ARE GATED TOO, deliberately. The check is on access, not on
+         //  write -- that is what the specification says, and it is a different
+         //  rule from $veda_csr_escape_violation's read exemption, which is about
+         //  a compartment inspecting its OWN bounds and stays as it was.
+         // ═══════════════════════════════════════════════════════════════════
+         $csr_priv_bits[1:0] = $priv ? 2'b11 : 2'b00;
+         $csr_priv_violation = $is_csr_access && ($csr_priv_bits < $csr_addr[9:8]);
+
+         //  MRET below Machine is an illegal instruction. Without this the whole
+         //  increment inverts: unprivileged code would write mstatus.MPP and mret
+         //  itself straight into Machine. The CSR check above already refuses the
+         //  MPP write, so this is the second of two independent gates on the same
+         //  escalation -- both are kept, because an escalation path that needs
+         //  only one mistake to reopen is not closed.
+         $mret_priv_violation = $is_mret && !$priv;
+
          $veda_illegal_instr = $veda_undef_encoding ||
                                 $base_undef_encoding ||
                                 $veda_csr_undef ||
+                                $csr_priv_violation ||
+                                $mret_priv_violation ||
                                 $veda_csr_escape_violation ||
                                 $veda_odt_page_out_refusal ||
                                 $veda_odt_page_in_refusal ||
@@ -4789,7 +4895,8 @@
          //  no real trap-handler pattern in this project ever needs to
          //  fabricate a cause/value software didn't actually observe.
          // ─────────────────────────────────────────────────────────
-         $csr_rdata[63:0] = $csr_is_mtvec  ? $mtvec :
+         $csr_rdata[63:0] = $csr_is_mstatus ? $mstatus_val :
+                             $csr_is_mtvec  ? $mtvec :
                              $csr_is_mscratch ? $mscratch :
                              $csr_is_mepc   ? $mepc :
                              $csr_is_mcause ? $mcause :
@@ -4827,7 +4934,11 @@
          // core's own trap handlers depend on it. Keyed on the rs1 FIELD, which
          // is the right test for both the register and the immediate forms.
          $csr_src_is_zero = ($rs1 == 5'b0);
-         $csr_write_en = $is_csr_access &&
+         // R39: an access the privilege check refuses must not also perform its
+         // write. Gating here rather than on each arm is the point of having a
+         // generic check at all -- the five arms that carry their own `&& $priv`
+         // keep it as defence in depth, but nothing new ever has to remember to.
+         $csr_write_en = $is_csr_access && !$csr_priv_violation &&
                          !(($is_csrrs || $is_csrrc || $is_csrrsi || $is_csrrci) && $csr_src_is_zero);
          // RTL MILESTONE 20 (Sail mirror, MILESTONE_20_RESULTS.md): the
          // real, empirically-confirmed compartment-state CSR
@@ -4875,6 +4986,60 @@
          // family already is. Unlike those, mtvec has no trap-reset branch
          // of its own to piggyback on, so it needs its own explicit guard
          // here -- matching $veda_mode's own already-established pattern.
+         // ═══════════════════════════════════════════════════════════════════
+         //  R36/R39 -- mstatus. Three real fields, held as three signals rather
+         //  than one 64-bit register, because every writer here touches exactly
+         //  one of them and a read-modify-write of a mostly-zero word would hide
+         //  that. $mstatus_val below is the architectural view, assembled only
+         //  where software actually reads it.
+         //
+         //  The trap/mret sequencing is the privileged spec's own, taken from
+         //  the model this project already builds against (sys/sys_control.sail
+         //  trap_handler: MPIE = MIE; MIE = 0; MPP = cur_privilege), not
+         //  reinvented:
+         //     trap : MPIE <- MIE,  MIE <- 0,   MPP <- current privilege
+         //     mret : MIE  <- MPIE, MPIE <- 1,  MPP <- least-privileged supported
+         //
+         //  MPP IS WARL AND THE LEGALISATION IS LOAD-BEARING, not tidiness. This
+         //  hart has exactly two privilege levels, so MPP may only ever hold
+         //  0b11 (Machine) or 0b00 (User). Accepting 0b01/0b10 would let
+         //  software park a Supervisor encoding in MPP that $priv -- one bit --
+         //  cannot represent, and $priv would then take MPP[1] and read it as
+         //  Machine. The legalisation is what stops "write MPP = 0b10, mret"
+         //  from being a privilege escalation.
+         // ═══════════════════════════════════════════════════════════════════
+         $mstatus_mpp[1:0] = $reset ? 2'b00 :
+                             (>>1$veda_trap_taken) ? {>>1$priv, >>1$priv} :
+                             (>>1$mret_ok) ? 2'b00 :
+                             (>>1$csr_write_en && >>1$csr_is_mstatus) ?
+                                 ((>>1$csr_wdata[12:11] == 2'b11) ? 2'b11 : 2'b00) :
+                             >>1$mstatus_mpp;
+         $mstatus_mpie = $reset ? 1'b0 :
+                         (>>1$veda_trap_taken) ? >>1$mstatus_mie :
+                         (>>1$mret_ok) ? 1'b1 :
+                         (>>1$csr_write_en && >>1$csr_is_mstatus) ? >>1$csr_wdata[7] :
+                         >>1$mstatus_mpie;
+         $mstatus_mie = $reset ? 1'b0 :
+                        (>>1$veda_trap_taken) ? 1'b0 :
+                        (>>1$mret_ok) ? >>1$mstatus_mpie :
+                        (>>1$csr_write_en && >>1$csr_is_mstatus) ? >>1$csr_wdata[3] :
+                        >>1$mstatus_mie;
+         // The architectural word: MPP at 12:11, MPIE at 7, MIE at 3, all other
+         // bits hardwired zero (WARL -- writes to them are dropped above).
+         //
+         // WHAT IS DELIBERATELY NOT HERE, named rather than left for a reader to
+         // discover. The model's mstatus also carries SXL/UXL, MPRV, MXR, SUM,
+         // TVM/TW/TSR and the S-mode pair SIE/SPIE/SPP, and reads them back
+         // non-zero where this returns zero. None of them have a consumer on
+         // this hart: there is no S-mode, no virtual memory, and no interrupt
+         // delivery path, so implementing them would be reporting features that
+         // do not exist -- which is the failure mode R32 closed for CSR
+         // addresses (a handler probing by reading concludes "present and
+         // disabled" rather than "absent"). The differential probe therefore
+         // compares the MPP field specifically and says so, instead of comparing
+         // the whole word and calling the difference agreement or a defect.
+         $mstatus_val[63:0] = {51'b0, $mstatus_mpp, 3'b0, $mstatus_mpie, 3'b0, $mstatus_mie, 3'b0};
+
          $mtvec[63:0] = $reset ? 64'b0 :
                         (>>1$csr_write_en && >>1$csr_is_mtvec && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata :
                                                                   >>1$mtvec;
@@ -4921,9 +5086,28 @@
                          // RTL Milestone 23: ecall gets the real,
                          // standard RISC-V privileged-spec mcause for
                          // "Environment call from M-mode" (0x0B=11) --
-                         // not an invented Veda-specific code, and the
-                         // only possible value since this core only
-                         // ever runs M-mode.
+                         // not an invented Veda-specific code.
+                         //
+                         // R36: the rest of that sentence used to read "and the
+                         // only possible value since this core only ever runs
+                         // M-mode". That was false in this same file, which
+                         // defines $priv above and had ten test programs that
+                         // cleared it. So an unprivileged compartment's ecall
+                         // announced itself to the handler as "Environment call
+                         // from Machine mode" -- caller-identity forgery at the
+                         // one boundary whose entire job is to tell the handler
+                         // who called. Not an escalation by itself: the damage
+                         // is that a handler deciding how far to trust a request
+                         // by reading mcause cannot distinguish its own kernel's
+                         // call from a compartment's, while it still holds
+                         // whatever the ODA grants it (six authority gates take
+                         // $veda_oda_authorized with no privilege term at all).
+                         //
+                         // 0x08 is E_U_EnvCall, 0x0B is E_M_EnvCall, straight
+                         // from the privileged spec's cause table and from the
+                         // model's own ExceptionType. >>1$priv, not $priv: the
+                         // privilege that MADE the call, before this same cycle
+                         // raises it.
                          (>>1$veda_trap_taken) ? (>>1$veda_illegal_instr ? 64'h02 :
                                                    // R33d: Breakpoint is cause 3.
                                                    // Ahead of the ecall arm only
@@ -4931,7 +5115,7 @@
                                                    // decodes are disjoint 32-bit
                                                    // literals.
                                                    >>1$is_ebreak ? 64'h03 :
-                                                   >>1$is_ecall ? 64'h0B : 64'h18) :
+                                                   >>1$is_ecall ? (>>1$priv ? 64'h0B : 64'h08) : 64'h18) :
                                                   >>1$mcause;
          $mtval[63:0] = $reset ? 64'b0 :
                         // veda_xtval(cap_idx, cause) = zero_extend(cap_idx5
@@ -5069,14 +5253,14 @@
                                  (>>1$veda_trap_taken) ? 56'b0 :
                                  // RTL-8 (R12): occupancy is out of band now. depth==1 means this is
                                  // the OUTERMOST unwind, the one that owns the saved frame.
-                                 (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_base :
+                                 (>>1$mret_ok && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_base :
                                  // Poisoned outermost unwind: DENY. A zero-length PCC faults on the
                                  // very next fetch -- loud, and incapable of granting anything.
-                                 (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 56'b0 :
+                                 (>>1$mret_ok && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 56'b0 :
                                  // An INNER level's context was the reset context by construction, so
                                  // it is reconstructed rather than stored -- which is what makes one
                                  // slot plus a counter lossless here instead of an approximation.
-                                 (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 56'b0 : 56'b0) :
+                                 (>>1$mret_ok && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 56'b0 : 56'b0) :
                                  (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_base :
                                  (>>1$csr_write_en && >>1$csr_is_veda_pcc_base && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[55:0] :
@@ -5125,7 +5309,7 @@
          //  that cost RTL-3 four bugs.
          $veda_current_region[19:0] = $reset ? 20'b0 :
                                        (>>1$veda_trap_taken) ? 20'b0 :
-                                       (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region :
+                                       (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region :
                                        (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_check_region :
                                        (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_check_region :
                                                                                                    >>1$veda_current_region;
@@ -5135,7 +5319,7 @@
          //  Sail's veda_crbr_load reading veda_region_table[ru].
          $veda_current_odt_base[31:0] = $reset ? 32'b0 :
                                          (>>1$veda_trap_taken) ? rt_odt_base[0] :
-                                         (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region_base :
+                                         (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? >>1$veda_saved_region_base :
                                          (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? rt_odt_base[>>1$veda_check_region[2:0]] :
                                          (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? rt_odt_base[>>1$veda_check_region[2:0]] :
                                                                                                      >>1$veda_current_odt_base;
@@ -5161,24 +5345,24 @@
          //  would look perfectly correct forever.
          $veda_saved_region[19:0] = $reset ? 20'hFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_region :
-                                     (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? 20'hFFFFF :
+                                     (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? 20'hFFFFF :
                                                                                               >>1$veda_saved_region;
          $veda_saved_region_base[31:0] = $reset ? 32'b0 :
                                           (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_odt_base :
-                                          (>>1$is_mret && (>>1$veda_saved_region != 20'hFFFFF)) ? 32'b0 :
+                                          (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? 32'b0 :
                                                                                                    >>1$veda_saved_region_base;
          $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                    (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :
                                    // RTL-8 (R12): occupancy is out of band now. depth==1 means this is
                                    // the OUTERMOST unwind, the one that owns the saved frame.
-                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_length :
+                                   (>>1$mret_ok && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_length :
                                    // Poisoned outermost unwind: DENY. A zero-length PCC faults on the
                                    // very next fetch -- loud, and incapable of granting anything.
-                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 40'b0 :
+                                   (>>1$mret_ok && (>>1$veda_trap_depth == 8'd1) && (>>1$veda_trap_poison)) ? 40'b0 :
                                    // An INNER level's context was the reset context by construction, so
                                    // it is reconstructed rather than stored -- which is what makes one
                                    // slot plus a counter lossless here instead of an approximation.
-                                   (>>1$is_mret && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 40'b0 : 40'hFFFFFFFFFF) :
+                                   (>>1$mret_ok && (>>1$veda_trap_depth > 8'd1)) ? (>>1$veda_trap_poison ? 40'b0 : 40'hFFFFFFFFFF) :
                                    (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_length :
                                    (>>1$csr_write_en && >>1$csr_is_veda_pcc_length && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[39:0] :
@@ -5229,7 +5413,7 @@
          //  own operand, so a saved frame is superseded -- abandoned, not restored.
          $veda_trap_depth[7:0] = $reset ? 8'b0 :
                                   (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'hFF)) ? (>>1$veda_trap_depth + 8'b1) :
-                                  ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth != 8'b0)) ? (>>1$veda_trap_depth - 8'b1) :
+                                  ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth != 8'b0)) ? (>>1$veda_trap_depth - 8'b1) :
                                                                                             >>1$veda_trap_depth;
          //  Poison marks a chain that cannot be reconstructed: a handler that
          //  narrowed ITSELF -- via OCInvoke, or the PCC CSRs, writable precisely
@@ -5241,16 +5425,16 @@
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'b0) &&
                                ((>>1$veda_pcc_length != 40'hFFFFFFFFFF) || (>>1$veda_current_region != 20'b0) || (>>1$veda_pcc_object != VEDA_OBJECT_NONE))) ? 1'b1 :
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'hFF)) ? 1'b1 :
-                              ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
+                              ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
                                                                                         >>1$veda_trap_poison;
          $veda_mepcc_base[55:0] = $reset ? 56'b0 :
                                    (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_base :
-                                   ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
+                                   ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
                                    (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[55:0] :
                                                                                        >>1$veda_mepcc_base;
          $veda_mepcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_length :
-                                     ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
+                                     ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
                                      (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
          // RTL-9 (R11(b)): the name PCC is running under. Mirrors Sail's
@@ -5266,7 +5450,7 @@
                                    // callee's name. Nothing is lost: while the return
                                    // is owed the SAVED name pins the same object.
                                    (>>1$veda_trap_taken) ? VEDA_OBJECT_NONE :
-                                   (>>1$is_mret && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_object :
+                                   (>>1$mret_ok && (>>1$veda_trap_depth == 8'd1) && !(>>1$veda_trap_poison)) ? >>1$veda_mepcc_object :
                                    (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ? >>1$veda_rs1cap_object_id :
                                    (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? >>1$veda_rs1cap_object_id :
                                                                                               >>1$veda_pcc_object;
@@ -5277,7 +5461,7 @@
          // the defect R12 existed to remove.
          $veda_mepcc_object[43:0] = $reset ? VEDA_OBJECT_NONE :
                                      (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_object :
-                                     ((>>1$is_mret || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? VEDA_OBJECT_NONE :
+                                     ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? VEDA_OBJECT_NONE :
                                                                                                >>1$veda_mepcc_object;
          // RTL Milestone 18: plain read/write CSR, no other write source
          // (unlike veda_pcc_base/length, which also get written by a
@@ -5409,16 +5593,36 @@
                       // reported through the trap, not through rd.
                       ($is_veda_odt_page_out && !$veda_odt_page_out_refusal) ||
                       ($is_veda_odt_page_in  && !$veda_odt_page_in_refusal) ||
-                      // RTL Milestone 9: CSRRW/CSRRS always write rd
-                      // with the CSR's OLD value, independent of
-                      // $veda_trap_taken -- a CSR read/write is never
-                      // itself a Veda-Core violation, and real Zicsr
-                      // semantics give rd the pre-write value
-                      // unconditionally (matching every prior /xreg
-                      // write-gating convention in this file: gate on
-                      // "is this instruction real", not on an
-                      // unrelated signal).
-                      $is_csr_access;
+                      // RTL Milestone 9 wrote this arm as a bare
+                      // $is_csr_access, on the stated ground that "a CSR
+                      // read/write is never itself a Veda-Core violation".
+                      // That was true when it was written and is not true
+                      // now: R32 made an undefined address illegal, M20/R26
+                      // made a compartment's write to its own bounds
+                      // illegal, and R39 makes an access below the
+                      // address's own privilege illegal. Three separate
+                      // increments falsified the premise and none of them
+                      // came back to this line.
+                      //
+                      // FOUND BY THE R39 TEST, NOT BY READING: an
+                      // unprivileged `csrr x15, 0x7c1` took its
+                      // Illegal_Instruction trap AND delivered
+                      // 0xFFFFFFFFFF into x15. The trap was real, the
+                      // refusal was not -- which for a check whose whole
+                      // purpose is that READS are gated too is the entire
+                      // property, lost. A refused instruction must not
+                      // commit its result; the refusal is reported through
+                      // the trap, not through rd, exactly as the page
+                      // family two arms up already says.
+                      //
+                      // Gated on the three CSR-specific violations rather
+                      // than on $veda_trap_taken, matching this list's own
+                      // per-family convention. Nothing else can trap a CSR
+                      // instruction in this core: a fetch-bounds violation
+                      // forces $instr to a NOP before decode, so
+                      // $is_csr_access is already false there.
+                      ($is_csr_access && !$csr_priv_violation &&
+                       !$veda_csr_undef && !$veda_csr_escape_violation);
 
          // ─────────────────────────────────────────────────────────
          //  REGISTER FILE (32 x 64-bit), x0 hardwired to 0
@@ -5534,13 +5738,13 @@
          // joins the same unconditional-hardware-redirect family as
          // OCInvoke/OCJALR above (a failing OCRETURN is already routed
          // to $veda_trap_taken, never reaches here).
-         $pc_src = $veda_trap_taken || $is_mret ||
+         $pc_src = $veda_trap_taken || $mret_ok ||
                    ($is_veda_ocinvoke && !$veda_ocinvoke_violation) ||
                    ($is_veda_ocjalr && !$veda_ocjalr_violation) ||
                    ($is_veda_ocreturn && !$veda_ocreturn_violation) ||
                    $is_jal || $is_jalr || $branch_taken;
          $alt_pc[63:0] = $veda_trap_taken ? $mtvec :
-                          $is_mret         ? $mepc :
+                          $mret_ok         ? $mepc :
                           ($is_veda_ocinvoke && !$veda_ocinvoke_violation) ? $veda_ocinvoke_target :
                           ($is_veda_ocjalr && !$veda_ocjalr_violation) ? $veda_ocjalr_target :
                           ($is_veda_ocreturn && !$veda_ocreturn_violation) ? $veda_ocreturn_target :

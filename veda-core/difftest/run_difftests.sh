@@ -35,7 +35,13 @@ p12_ambient_boot.S      AGREE      R34: the boot context has AMBIENT authority. 
 p_reset_crf.S           AGREE      R24 CLOSED: all 16 capability registers agree at reset
 p13_scr_reset.S         AGREE      R37 CLOSED: the three Special Capability Registers
 p14_cow_eligibility.S   AGREE      R38: the COW fault asks WHETHER, never WHO. Both layers
+p15_priv_model.S        AGREE      R36/R39 CLOSED: the two layers finally share a privilege
 "
+#                                  mechanism, so privileged behaviour can be compared at all
+#                                  -- p13's own header recorded that it could not be. MPP,
+#                                  the U-mode CSR refusal and its cause, MRET-below-Machine,
+#                                  and the ecall cause, with an arithmetic control so that
+#                                  "both layers trapped everything" cannot pass as agreement.
 #                                  FIXTURES inside the architectural reset, at
 #                                  different indices with different contents. c0-c9
 #                                  and c15 converged when Sail gained veda_reset_crf().

@@ -1,3 +1,4 @@
+#include "veda_priv_macros.h"
 .section .text
 .global _start
 _start:
@@ -36,7 +37,7 @@ _start:
     # -- The real proof: drop ordinary privilege entirely, then attempt
     #    ODT-Populate -- it must STILL succeed, purely via the ODA path,
     #    with zero ordinary-privilege help. --
-    .insn r 0x7b, 0x0, 0x00, x0, x0, x0  # veda.droppriv  -- $priv: 1 -> 0, one-way
+    VEDA_DROP_TO_USER(x28, x29)   // R36: the architected drop -- mstatus.MPP=U then mret
 
     li   x1, 41
     li   x2, 0x8001200000400300

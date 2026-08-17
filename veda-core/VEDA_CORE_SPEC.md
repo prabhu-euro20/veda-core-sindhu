@@ -27,6 +27,18 @@ Veda-Core reuses the standard RV64I instruction formats (R-type and I-type) and 
 | Custom-2 (Veda-Cap) | `1011011` | R-type | Capability metadata: bounds, permissions |
 | Custom-3 | `1111011` | — | **Reserved, unallocated** |
 
+**Custom-3 is unallocated again, and this row was right the whole time.** The RTL once carried one
+instruction here, `veda.droppriv` (Milestone 4) -- a one-way privilege drop that this table was never
+updated to declare, and that the Sail model never defined at all. R36/R39 retired it: its own recorded
+justification was that "real `mret` is a trap-return semantic this core has no trap to return from",
+and Milestone 9 built the traps and MRET. **Privilege is now the standard privileged-architecture
+mechanism on both layers** -- a trap raises to Machine saving the old level in `mstatus.MPP`, `mret`
+restores from it, and software drops privilege by writing MPP and executing `mret`. Every Custom-3
+encoding raises Illegal_Instruction. `mstatus` (0x300) implements MIE, MPIE and MPP; the fields with no
+consumer on this hart read zero rather than advertising features that do not exist. **A CSR access
+below the address's own privilege -- `csrPriv(csr) = csr[9..8]` -- is an illegal instruction, on reads
+as well as writes.** See DESIGN_07 R39.
+
 ### Custom-0 (OCL) — R-type data operations
 
 Standard R-type layout: `funct7[31:25] | rs2[24:20] | rs1[19:15] | funct3[14:12] | rd[11:7] | opcode[6:0]`.

@@ -56,7 +56,17 @@ way: this project's own Sail test config has S/U-mode disabled, so
 privilege can never actually drop below Machine there, making a
 genuinely privilege-independent proof structurally impossible in Sail
 with the existing config -- RTL's own independent `veda.droppriv`
-supplied the one real, end-to-end proof instead. Zero design/Sail/RTL
+supplied the one real, end-to-end proof instead.
+**BOTH HALVES OF THAT SENTENCE ARE NOW OUT OF DATE, and it is recorded
+here rather than deleted because it is exactly the shape of thing that
+gets read as still-true.** The Sail config has `"S"` and `"U"` at
+`supported: true`, and a test that enters U-mode via `mstatus.MPP` +
+`mret` runs there today (`sail_tests/vc_r39_csr_priv.S`). And
+`veda.droppriv` no longer exists: R36 retired it and unclaimed Custom-3,
+because its own justification -- that this core had no trap to return
+from -- expired at Milestone 9. Both layers now share the standard
+privilege mechanism, which is what makes
+`difftest/probes/p15_priv_model.S` possible at all. See DESIGN_07 R39. Zero design/Sail/RTL
 bugs found this milestone, a first since Milestone 8. The owner-hart
 hardware enforcement piece of Tier 3 item 7 is now **done** -- see
 `rtl/MILESTONE_12_RESULTS.md`: a real `owner_hart` byte in every ODT

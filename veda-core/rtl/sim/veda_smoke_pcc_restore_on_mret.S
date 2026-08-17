@@ -284,6 +284,29 @@ h_phase3_outer:
     #    completely wrong resume target. Saved here, before it can be
     #    clobbered. --
     csrr s2, mepc
+    # R36: mstatus joins mepc in this save, and for the identical reason stated
+    # directly above -- it is a single, global CSR the hardware rewrites on every
+    # trap, and the nested episode consumes it. Specifically: the inner mret sets
+    # MPP to the LEAST-privileged supported mode, which is what the privileged
+    # spec requires, so by the time the OUTER mret runs, MPP reads User and this
+    # handler would return to User instead of Machine. Without this save, resume3
+    # below executes its CSR read-backs unprivileged and takes an
+    # Illegal_Instruction it never asked for.
+    #
+    # WHY THIS IS SOFTWARE'S JOB HERE, when h_phase3_inner's own comment argues
+    # the opposite for mepcc and that argument is right. The two are different
+    # kinds of state. A stale mepcc restores BOUNDS, and getting those wrong can
+    # hand back authority that was never held -- so R12 made the hardware track
+    # it by depth and poison it, because only hardware can be trusted with a
+    # thing that escalates. A stale MPP can only ever restore LESS privilege
+    # than was held, because the spec pins the post-mret value to the least
+    # privileged mode; the failure direction is de-escalation, which is
+    # fail-safe. Hardware tracks what can escalate. Software saves what can only
+    # de-escalate. Inventing a depth-tracked MPP here would be non-standard
+    # hardware solving a problem the specification already made safe -- and it
+    # would put this layer back in exactly the position R36 exists to get it out
+    # of, implementing privilege behaviour the model does not define.
+    csrr s3, mstatus
     li   x30, 4                           # mark: the NEXT ecall trap is the nested one
     li   a7, 999
     ecall                                  # nested trap fires HERE, from M-mode (unbounded PCC)
@@ -308,6 +331,7 @@ h_phase3_outer:
     # frame has simply been sitting untouched across the whole nested
     # episode, which is the property this phase now asserts.
     li   x30, 3                           # restore phase marker for correctness/clarity (not re-checked)
+    csrw mstatus, s3                      # R36: put MPP back the way this frame found it
     addi t3, s2, 4                        # the OUTER's own real resume address (s2, not a re-read CSR)
     csrw mepc, t3
     mret

@@ -20,9 +20,14 @@
 #       one Special Capability Register that authorises privileged object
 #       operations. Machine-mode only, so not an unprivileged escalation; it is
 #       an unallocated encoding performing an authority-register swap.
-#   w6  veda.droppriv with funct3 != 000. veda_core.tlv:1658 omits the funct3
-#       test entirely, so all 8 funct3 values reach $priv = 0. Placed LAST
-#       because if it executes, privilege is gone for everything after it.
+#   w6  was "veda.droppriv with funct3 != 000", where the decoder omitted the
+#       funct3 test entirely so all 8 values reached $priv = 0. R30 narrowed the
+#       decode; R36 then retired the instruction outright and unclaimed Custom-3,
+#       so this encoding is now illegal for a STRONGER reason -- the whole major
+#       opcode is unallocated on both layers, which is what the model always
+#       said, having never defined a Custom-3 clause. Same observable, same
+#       verdict; kept because an encoding that was once executed is worth
+#       continuing to prove is refused.
 #
 # w8 is the control: a LEGAL bind must still work on both layers, so a layer
 # that simply refused this whole family could not pass.

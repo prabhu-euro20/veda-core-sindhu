@@ -1,3 +1,4 @@
+#include "veda_priv_macros.h"
 .section .text
 .global _start
 // RTL-6c (DESIGN_02 Phase 2, increment 2): WHAT THE PAGING PAIR REFUSES.
@@ -161,7 +162,7 @@ _start:
     li   x9, 4
     bne  x20, x9, fail                     // still authorized here
 
-    .insn r 0x7b, 0x0, 0x00, x0, x0, x0    // veda.droppriv (Custom-3)
+    VEDA_DROP_TO_USER(x1, x9)   // R36: the architected drop -- mstatus.MPP=U then mret
 
     li   x1, 113                           // live and resident: the ONLY
     .insn r 0x0b, 0x1, 0x05, x10, x1, x0   // objection is authority
