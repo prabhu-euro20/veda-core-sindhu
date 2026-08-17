@@ -31,6 +31,7 @@ p8_reserved_bits.S      AGREE      R30(b) CLOSED: reserved-zero fields inside al
 p10_ebreak.S            AGREE      R33d: EBREAK is mcause 3 with mtval = the faulting PC
 p11_csr_forms.S         AGREE      R33c: all six Zicsr forms, and R32 now sees them
 p9_tag_destroy.S        AGREE      R33 CLOSED: the capability kill AND the trap
+p12_ambient_boot.S      AGREE      R34: the boot context has AMBIENT authority. Both
 p_reset_crf.S           AGREE      R24 CLOSED: all 16 capability registers agree at reset
 "
 #                                  FIXTURES inside the architectural reset, at
