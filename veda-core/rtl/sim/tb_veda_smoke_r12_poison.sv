@@ -9,7 +9,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (260) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (1040) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("traps=%0d stage=%0d status@t2=0x%0h mepcc@t2=0x%0h x30=0x%0h",
               dut.CPU_Xreg_val_a0[20], dut.CPU_Xreg_val_a0[21], dut.CPU_Xreg_val_a0[24],
               dut.CPU_Xreg_val_a0[25], dut.CPU_Xreg_val_a0[30]);

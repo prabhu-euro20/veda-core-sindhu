@@ -12,7 +12,7 @@ module tb;
     reset = 1;
     repeat (2) @(posedge clk);
     reset = 0;
-    repeat (18) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (72) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("granule_tamper: roundtrip_tag=%0b after_tamper_tag=%0b",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11]);
     if (dut.CPU_Xreg_val_a0[10] == 64'h1 && dut.CPU_Xreg_val_a0[11] == 64'h0)

@@ -57,7 +57,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (700) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (2800) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
 
     $display("crossing reached x18=0x%0h (want 0xA11E)   traps=%0d (want 2)",
              dut.CPU_Xreg_val_a0[18], dut.CPU_Xreg_val_a0[20]);

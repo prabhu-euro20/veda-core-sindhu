@@ -16,7 +16,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (900) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (3600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("stale mtval -- ocs.d=0x%0h ocl.d=0x%0h ocs.c=0x%0h ocl.c=0x%0h nmc.d=0x%0h nmc.w=0x%0h  (all want 0x22)",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11], dut.CPU_Xreg_val_a0[12],
              dut.CPU_Xreg_val_a0[13], dut.CPU_Xreg_val_a0[14], dut.CPU_Xreg_val_a0[15]);

@@ -22,7 +22,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (90) begin
+    repeat (360) begin
       @(posedge clk);
       #1;
       $display("cyc=%0d pc=0x%0h instr=0x%08h | priv=%0b is_odt_pop=%0b pop_viol=%0b",

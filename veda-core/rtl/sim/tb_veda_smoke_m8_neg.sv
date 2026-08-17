@@ -26,7 +26,7 @@ module tb;
     // reserved-mode trap now costs a handler round trip, so the two asserted
     // writes -- which were already instructions 28 and 29 of 30 -- no longer
     // land inside the old window.
-    repeat (140) begin
+    repeat (560) begin
       @(posedge clk);
       #1;
       cyc_cnt = cyc_cnt + 1;

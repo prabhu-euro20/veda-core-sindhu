@@ -22,7 +22,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (90) begin
+    repeat (360) begin
       @(posedge clk);
       #1;
       // Sample the RT read enable every cycle. x20 becomes 0xFA57 only

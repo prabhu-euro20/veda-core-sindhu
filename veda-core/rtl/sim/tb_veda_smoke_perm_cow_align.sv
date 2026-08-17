@@ -13,7 +13,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (1100) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (4400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("no-load  -- ocl.c=0x%0h nmc.w=0x%0h nmc.d=0x%0h  (all want 0xB2)",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11], dut.CPU_Xreg_val_a0[12]);
     $display("misalign -- ocl.c=0x%0h  (want 0x28)", dut.CPU_Xreg_val_a0[13]);

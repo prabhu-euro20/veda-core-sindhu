@@ -18,7 +18,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (16) begin
+    repeat (64) begin
       @(posedge clk);
       #1;
       $display("cyc=%0d pc=0x%0h instr=0x%08h | oca=%0b nmc_add=%0b atomic=%0b viol=%0b | x5=0x%0h x7=0x%0h x8=0x%0h | c1: tag=%0b base=0x%0h perms=0x%0h",

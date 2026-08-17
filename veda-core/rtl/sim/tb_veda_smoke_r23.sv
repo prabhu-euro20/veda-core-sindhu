@@ -21,7 +21,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (2400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("A: mtval=0x%0h (want 0x41 = c2<<5 | BOUNDS 0x01)   traps_after_A=%0d (want 1)",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11]);
     $display("B: perms_before_cow=0x%0h (want 0x100C)   perms_after_cow_REBIND=0x%0h (want 0x1004, bit 3 stripped)",

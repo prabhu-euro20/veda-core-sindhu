@@ -11,7 +11,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (1600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("before droppriv: pcc_len=0x%0h pcc_base=0x%0h mepcc_len=0x%0h",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11], dut.CPU_Xreg_val_a0[12]);
     $display("after  unpriv w: pcc_len=0x%0h pcc_base=0x%0h mepcc_len=0x%0h   (must be IDENTICAL)",

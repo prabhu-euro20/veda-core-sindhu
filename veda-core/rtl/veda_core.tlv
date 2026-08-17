@@ -1007,6 +1007,20 @@
    //  that one is already proven to reach TLV expressions from an SV initial
    //  block, which is exactly what the /vreg reset arms need.
    // ═══════════════════════════════════════════════════════════════════════
+   // R21: the tripwire's teeth. A pure observer -- it drives nothing and gates
+   // nothing, so it cannot change behaviour -- but if the precondition for
+   // FIX 2 ever becomes reachable, the simulation stops here and says so
+   // rather than losing the redirect silently.
+   always @(posedge clk) begin
+      if (!reset && CPU_veda_redirect_during_stall_start_a0 === 1'b1) begin
+         $display("FATAL: a PC redirect coincided with the start of a DRAM stall.");
+         $display("  R21 FIX 2 is now REACHABLE and must be built -- the $pc mux");
+         $display("  ranks the stall above the redirect, so this one is about to");
+         $display("  be discarded. See the FIX 2 comment above $veda_dram_stall_req.");
+         $fatal(1);
+      end
+   end
+
    logic veda_fixtures_mode;
    initial begin
       veda_fixtures_mode = 1'b0;
@@ -1685,6 +1699,46 @@
          //  DESIGN_07. iverilog is absent from this machine, so this fix is
          //  hand-verified against the RTL only. Do not credit it as proven.
          // ─────────────────────────────────────────────────────────
+         // ═══════════════════════════════════════════════════════════════════
+         //  R21 FIX 2 -- NOT BUILT, AND THIS IS THE GUARD THAT REPLACES IT.
+         //
+         //  The recorded finding said the PC mux "also silently swallows
+         //  ordinary taken branches, JAL/JALR, OCInvoke/OCReturn and mret".
+         //  THAT IS FALSE FOR THIS CORE, and the correction matters more than
+         //  the fix would have.
+         //
+         //  This is a single-stage machine -- |cpu @0, and there is no @1 --
+         //  so $pc_src and $veda_dram_stall_req are functions of ONE $instr.
+         //  Every instruction that can request a stall is custom-0 (0001011):
+         //  the three Bind modes and OCL.C/OCS.C. Every non-trap redirect lives
+         //  in another opcode entirely -- branch 1100011, jalr 1100111, jal
+         //  1101111, system/mret 1110011, and the OC* jumps in custom-2
+         //  1011011. One instruction cannot be both. And during continuation
+         //  cycles $instr is a forced NOP, so nothing executes there either.
+         //
+         //  The only redirect a custom-0 instruction can raise is its own trap,
+         //  and FIX 1 below excludes every trapping condition on exactly those
+         //  five instructions. So FIX 1 closed R21 completely and FIX 2 has NO
+         //  REACHABLE TRIGGER.
+         //
+         //  BUILDING IT ANYWAY WOULD BE THE WRONG TRADE. FIX 2 restructures the
+         //  $pc mux -- the most safety-critical expression in the core -- and
+         //  unlike FIX 1 it is not monotone: it can CREATE a redirect where none
+         //  happened. Taking that risk for zero present benefit, against a
+         //  hazard that only appears if someone later widens the stall scope, is
+         //  not hardening. It is churn on the one expression that must not churn.
+         //
+         //  SO THE HAZARD GETS A TRIPWIRE INSTEAD. The precondition for FIX 2
+         //  being needed is exactly "a redirect coincided with the start of a
+         //  stall". That is checkable, it is monotone -- it adds no behaviour --
+         //  and it converts a comment about future work into something that
+         //  FIRES. Widen the stall scope past bind/OCL.C/OCS.C, as this file
+         //  already flags as planned, and the first simulation that hits the
+         //  co-occurrence stops with a message naming FIX 2, instead of silently
+         //  discarding a redirect the way R21 originally did.
+         // ═══════════════════════════════════════════════════════════════════
+         $veda_redirect_during_stall_start = $veda_dram_stall_req && $pc_src;
+
          $veda_dram_stall_req =
             !$veda_pcc_violation && !(>>1$veda_dram_busy) &&
             ((($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)

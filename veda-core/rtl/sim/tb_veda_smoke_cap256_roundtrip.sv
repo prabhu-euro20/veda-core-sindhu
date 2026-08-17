@@ -13,7 +13,7 @@ module tb;
     reset = 1;
     repeat (2) @(posedge clk);
     reset = 0;
-    repeat (22) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (88) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("cap256 before: base=0x%0h len=0x%0h perm=0x%0h type=0x%0h off=0x%0h",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11], dut.CPU_Xreg_val_a0[12],
              dut.CPU_Xreg_val_a0[13], dut.CPU_Xreg_val_a0[14]);

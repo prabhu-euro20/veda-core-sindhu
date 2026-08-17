@@ -23,7 +23,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (800) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (3200) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("P1 ocs   =0x%0h (want 0x41)   P2 ocsc  =0x%0h (want 0x21)",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11]);
     $display("P3 nmc.d =0x%0h (want 0x81)   P4 nmc.w =0x%0h (want 0x81)   P5 atomic=0x%0h (want 0x81)",

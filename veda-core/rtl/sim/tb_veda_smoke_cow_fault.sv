@@ -15,7 +15,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (1600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("setup=0x%0h cowfault=0x%0h reads=0x%0h rebind=0x%0h nmc=0x%0h cleared=0x%0h x30=0x%0h traps=%0d mtval=0x%0h",
              dut.CPU_Xreg_val_a0[21], dut.CPU_Xreg_val_a0[22], dut.CPU_Xreg_val_a0[23],
              dut.CPU_Xreg_val_a0[24], dut.CPU_Xreg_val_a0[26], dut.CPU_Xreg_val_a0[27],

@@ -17,7 +17,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (8) begin
+    repeat (32) begin
       @(posedge clk);
       #1;
       $display("cyc=%0d pc=0x%0h instr=0x%08h | csetbounds=%0b | x20=0x%0h | c2:tag=%0b",

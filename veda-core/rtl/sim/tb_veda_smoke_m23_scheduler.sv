@@ -27,7 +27,7 @@ module tb;
     // on purpose for the first real run; tighten only after observing
     // actual cycles needed (this project's own established practice,
     // MILESTONE_14_RESULTS.md).
-    repeat (5000) begin
+    repeat (20000) begin
       @(posedge clk);
       #1;
       cyc_cnt = cyc_cnt + 1;

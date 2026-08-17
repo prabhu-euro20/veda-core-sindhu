@@ -26,7 +26,7 @@ module tb;
     repeat (2) @(posedge clk);
     reset = 0;
 
-    repeat (55) begin
+    repeat (220) begin
       @(posedge clk);
       #1;
       cyc_cnt = cyc_cnt + 1;

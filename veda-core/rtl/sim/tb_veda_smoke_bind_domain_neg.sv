@@ -16,7 +16,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (1600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("refused=0x%0h mtval=0x%0h tag=%0d open-still-binds=%0d x30=0x%0h traps=%0d",
              dut.CPU_Xreg_val_a0[22], dut.CPU_Xreg_val_a0[25], dut.CPU_Xreg_val_a0[21],
              dut.CPU_Xreg_val_a0[23], dut.CPU_Xreg_val_a0[30], dut.CPU_Xreg_val_a0[20]);

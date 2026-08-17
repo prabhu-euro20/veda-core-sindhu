@@ -17,7 +17,7 @@ module tb;
   always #5 clk = ~clk;
   initial begin
     reset = 1; repeat (2) @(posedge clk); reset = 0;
-    repeat (400) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
+    repeat (1600) begin @(posedge clk); #1; cyc_cnt = cyc_cnt + 1; end
     $display("reset  otype x10=0x%0h (want 0xFFFF)   tag x11=0x%0h (want 0)",
              dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11]);
     $display("rebind c9    tag x12=0x%0h (want 1)  base x13=0x%0h (want 0x80010900)  len x14=0x%0h (want 0x40)",
