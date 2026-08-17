@@ -4363,6 +4363,46 @@
          // untouched -- they also feed R21's stall gate, and restructuring one is
          // the single way this edit could reopen R21:
          //   old (cow) | (!STORE)  ==  new (!STORE & !cow) | (cow)
+         //
+         // ═══ R38 -- WHO IS ENTITLED TO CAUSE A COPY-ON-WRITE SPLIT ═══
+         //
+         // The five store-family arms below used to read
+         //     (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13
+         // mirroring Sail's own `& not(entry.cow)` gate. That gate meant a store
+         // through a capability with NO store permission, to a cow object,
+         // reported 0x0C rather than 0x13 -- and 0x0C is not a refusal, it is a
+         // REPAIR REQUEST that tells software to allocate, copy and hand back a
+         // fresh writable object. So a read-only delegate could force an
+         // allocation on every attempt, forever. Measured on both layers in
+         // difftest/probes/p14_cow_eligibility.S.
+         //
+         // The conjunct is gone on both layers. The capability's own store
+         // permission now decides, and because veda.odt.set.cow deliberately does
+         // not bump the generation, the capabilities that still carry it are
+         // exactly those minted BEFORE the object became copy-on-write. Whoever
+         // held write authority at that moment may split; whoever learns the
+         // Object_ID afterwards and Binds it gets a read capability -- the
+         // 16'hFFF7 mask at :3106/:3121 sees to that -- and may not force a copy.
+         //
+         // THE INVARIANT ABOVE STILL HOLDS AND IS WHY THIS IS SAFE FOR R21. The
+         // trap SET is untouched: (!STORE & !cow) | (cow) and (!STORE) | (cow)
+         // cover the identical states, so the violation OR-expressions that feed
+         // R21's stall gate are not edited at all and no access changes from
+         // trapping to succeeding or back.
+         //
+         // WHAT CHANGES IS WIDER THAN "ONE STATE", and an adversarial parity pass
+         // corrected an earlier draft of this comment that said otherwise. The
+         // 0x13 arm now sits ABOVE the alignment, bounds and residency arms for
+         // EVERY {cow, no store permission} access, not only the in-bounds
+         // resident one -- a misaligned, an out-of-bounds and a non-resident such
+         // access each now report 0x13 where they previously reported 0x08, 0x01
+         // and 0x0A. That is the correct ordering and not a side effect: a
+         // refusal outranks a repair request, which is the same rule that already
+         // puts the PERM_LOAD arm above bounds, and it makes the cow case behave
+         // like the non-cow case rather than specially. Both layers move
+         // identically -- Sail reads permBit(cap.Perms, PERM_STORE) and this reads
+         // $veda_rs1cap_perms[3], the same capability register in both, never the
+         // ODT entry -- so there is no cross-layer divergence to create.
          $veda_ocl_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
@@ -4373,7 +4413,7 @@
          $veda_ocs_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
-            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
+            !$veda_perm_store_ok                    ? 5'h13 :
             !$veda_bounds_ok                       ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
             $veda_cow_write                        ? 5'h0C :
@@ -4389,7 +4429,7 @@
          $veda_ocsc_cause[4:0] =
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
-            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
+            !$veda_perm_store_ok                    ? 5'h13 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
@@ -4400,7 +4440,7 @@
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
             !$veda_perm_load_ok                    ? 5'h12 :
-            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
+            !$veda_perm_store_ok                    ? 5'h13 :
             !$veda_nmc_bounds_ok_w                 ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
             $veda_cow_write                        ? 5'h0C :
@@ -4410,7 +4450,7 @@
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_nmc_ok                     ? 5'h1f :
             !$veda_perm_load_ok                    ? 5'h12 :
-            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
+            !$veda_perm_store_ok                    ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
             $veda_cow_write                        ? 5'h0C :
@@ -4424,7 +4464,7 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
-            (!$veda_perm_store_ok && !$veda_cow_write) ? 5'h13 :
+            !$veda_perm_store_ok                    ? 5'h13 :
             !$veda_nmc_bounds_ok_d                 ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
             $veda_cow_write                        ? 5'h0C :

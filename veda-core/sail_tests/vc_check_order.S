@@ -81,18 +81,32 @@ _start:
     .insn r 0x0b, 0x3, 0x01, x3, x1, x2   # ocs.d through c1, offset 0
     mv   x12, x25                          # want (1<<5)|0x0C = 0x2C
 
-    # ---------------- PHASE D (the gate) ----------------
+    # ---------------- PHASE D (WHO MAY SPLIT -- R38) ----------------
     # Bind AFTER set.cow, so veda_bind_perms masks with 0xFFF7 and c3 lacks
-    # PERM_STORE by construction. Storing through it must still report 0x0C
-    # "copy me", never 0x13 "you may not write" -- that is the whole job of the
-    # not(entry.cow) conjunct on the permission arm, and it is what keeps
-    # copy-on-write reachable once the cow arm moved to the bottom of the chain.
+    # PERM_STORE by construction. Storing through it must report 0x13 "you may
+    # not write" -- NOT 0x0C "copy me".
     #
-    # THIS PHASE EXISTS BECAUSE THE MUTANT SURVIVED. Removing the gate was
-    # caught by NOTHING in a 94-test corpus: the existing cow tests inspect the
-    # attenuated capability with CGetPerm and never DEREFERENCE through it --
-    # attenuation tested as bookkeeping, never as enforcement, the identical
-    # shape as the CAndPerm defect. Predicting the mutant is what found it.
+    # THIS PHASE USED TO ASSERT THE OPPOSITE, and its own header said why it
+    # existed: removing the not(entry.cow) gate survived mutation because "the
+    # existing cow tests inspect the attenuated capability with CGetPerm and
+    # never DEREFERENCE through it -- attenuation tested as bookkeeping, never as
+    # enforcement". That observation was exactly right and the conclusion drawn
+    # from it was backwards. Dereferencing through the attenuated capability is
+    # the correct test; expecting 0x0C from it was the defect.
+    #
+    # 0x0C IS NOT A REFUSAL, IT IS A REPAIR REQUEST -- it tells a handler to
+    # allocate, copy, and hand back a fresh WRITABLE object. Handing that to a
+    # principal holding a read-only view gives it authority it was never granted,
+    # and it can ask again on every store, forever (measured in
+    # difftest/probes/p14_cow_eligibility.S). The predicate is PERM_STORE, and no
+    # new permission bit was needed: set.cow does not bump the generation, so the
+    # capabilities that still carry store are exactly those minted BEFORE the
+    # object became copy-on-write. Whoever held write authority at that moment
+    # may split. Whoever learns the name afterwards may read.
+    #
+    # AND THIS PHASE STILL CATCHES ITS ORIGINAL MUTANT. Re-adding the gate turns
+    # x13 back into 0x6C and fails here -- the enforcement direction is pinned in
+    # both directions now, which bookkeeping alone never was.
     li   x1, 1
     li   x4, 1
     .insn r 0x0b, 0x1, 0x07, x5, x1, x4   # veda.odt.set.cow 1 <- 1  (still cow)
@@ -101,7 +115,7 @@ _start:
     li   x2, 0
     li   x6, 0xA5
     .insn r 0x0b, 0x3, 0x01, x6, x3, x2   # ocs.d through c3, offset 0
-    mv   x13, x25                          # want (3<<5)|0x0C = 0x6C
+    mv   x13, x25                          # want (3<<5)|0x13 = 0x73
 
     # leave the two objects un-cowed so nothing downstream inherits the policy
     li   x1, 1
@@ -119,7 +133,7 @@ _start:
     bne  x11, t1, fail
     li   t1, 0x2C
     bne  x12, t1, fail
-    li   t1, 0x6C
+    li   t1, 0x73                          # R38: (c3 << 5) | 0x13 PERM_STORE, was 0x6C
     bne  x13, t1, fail
     RVMODEL_HALT_PASS
 

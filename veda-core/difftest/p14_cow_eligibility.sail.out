@@ -1,5 +1,5 @@
 using /home/prabhu/veda-core-sindhu/veda-core/difftest/p14_cow_eligibility.sail.sig for test-signature output.
-HTIF located at 0x800000e0
+HTIF located at 0x80000110
 begin_signature: 0x80070000
 end_signature: 0x80070040
 Entry point: 0x80000000

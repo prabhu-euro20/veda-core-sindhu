@@ -99,31 +99,50 @@ _start:
     // ---------- P7: control ----------
     // In bounds, resident, cow. Must STILL be 0x0C, or the arm is simply gone
     // and every phase above would pass for the wrong reason.
-    li   x1, 1
-    .insn i 0x0b, 0x5, x1, x1, 0          # re-bind c1 (P2 left it unchanged, be explicit)
+    //
+    // c1 IS DELIBERATELY NOT RE-BOUND HERE, and the line that did it is gone.
+    // It read `veda.bind c1, 1  # re-bind c1 (P2 left it unchanged, be explicit)`
+    // -- added for tidiness, and harmless right up until R38 made the cow arm
+    // consult the capability's own permissions. Object 1 is already cow by this
+    // point, so that re-bind ran veda_bind_perms, stripped PERM_STORE, and turned
+    // the POSITIVE control into a negative one: P7 reported 0x33 PERM_STORE
+    // instead of 0x2C COW, and the phase that exists to prove copy-on-write still
+    // fires would have been proving the opposite. c1 is bound at :37, BEFORE
+    // set.cow, and nothing between here and there rebinds it -- P1/P2/P4 only READ
+    // it as a csetbounds and ocs.c source. Its store permission is the subject of
+    // this phase; re-deriving it is exactly what must not happen.
     li   x2, 0
     li   x3, 0xA5
     .insn r 0x0b, 0x3, 0x01, x3, x1, x2   # ocs.d through c1, offset 0
     mv   x16, x22                          # want (1<<5)|0x0C = 0x2C
 
-    // ---------- P8: the gate ----------
+    // ---------- P8: WHO MAY SPLIT (R38) ----------
     // c3 is bound while the object is ALREADY cow, so veda_bind_perms masks with
-    // 16'hFFF7 and it lacks PERM_STORE by construction. It must still report
-    // 0x0C "copy me", never 0x13 "you may not write" -- that is the whole job of
-    // the !$veda_cow_write conjunct on the permission arm, and it is what keeps
-    // copy-on-write reachable now that the cow arm sits at the bottom.
+    // 16'hFFF7 and it lacks PERM_STORE by construction. It must report 0x13 "you
+    // may not write" -- NOT 0x0C "copy me".
     //
-    // This phase exists because the Sail mutant SURVIVED without it: removing the
-    // gate was caught by nothing in a 94-test corpus, because every existing cow
-    // test inspects the attenuated capability with CGetPerm and never
-    // DEREFERENCES through it. Attenuation tested as bookkeeping, never as
-    // enforcement -- the identical shape as the CAndPerm defect.
+    // THIS PHASE USED TO ASSERT THE OPPOSITE, and its own header said why it
+    // existed: removing the !$veda_cow_write conjunct survived mutation because
+    // "every existing cow test inspects the attenuated capability with CGetPerm
+    // and never DEREFERENCES through it -- attenuation tested as bookkeeping,
+    // never as enforcement". The observation was right; the expected value drawn
+    // from it was backwards.
+    //
+    // 0x0C is not a refusal, it is a REPAIR REQUEST that hands back a fresh
+    // WRITABLE object. Giving that to a read-only holder grants authority it was
+    // never delegated, on every store, forever. The predicate is PERM_STORE and
+    // needs no new bit: veda.odt.set.cow does not bump the generation, so the
+    // capabilities that still carry store are exactly those minted BEFORE the
+    // object became copy-on-write.
+    //
+    // Re-adding the conjunct turns x17 back into 0x6C and fails here, so the
+    // original mutant is still caught -- now in the enforcing direction.
     li   x1, 1
     .insn i 0x0b, 0x5, x3, x1, 0          # veda.bind c3, 1  -> store STRIPPED
     li   x2, 0
     li   x6, 0xA5
     .insn r 0x0b, 0x3, 0x01, x6, x3, x2   # ocs.d through c3, offset 0
-    mv   x17, x22                          # want (3<<5)|0x0C = 0x6C
+    mv   x17, x22                          # want (3<<5)|0x13 = 0x73
 
     // leave both objects un-cowed
     li   x1, 1
