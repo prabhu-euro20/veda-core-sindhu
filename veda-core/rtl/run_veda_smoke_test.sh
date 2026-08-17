@@ -119,6 +119,12 @@ if [ "$asm_fail" -ne 0 ]; then
 fi
 echo "    $(ls "$SIM"/veda_smoke_*.hex | wc -l) images built"
 
+# R22/R9: the timing rule's premise, checked rather than assumed. Runs before
+# anything is built, because it is a structural invariant over the source and
+# costs nothing.
+echo "==> Checking the timing-rule coupling (R22)"
+( cd .. && ./check_timing_coupling.sh ) || { echo "FATAL: the adopted timing rule's premise no longer holds" >&2; exit 5; }
+
 echo "==> Compiling with Icarus Verilog (positive test)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke.sv"
 echo "==> Simulating (positive test)"
