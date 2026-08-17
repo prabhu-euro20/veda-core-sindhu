@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Cross-layer differential suite.
+#
+# WHY THIS FILE EXISTS. rundiff.sh could not fail -- both its branches ended in
+# an echo under `set -uo pipefail` with no -e, so it returned 0 on a divergence
+# it had just printed -- and nothing invoked it: one line in a README was its
+# entire caller. A comparator that cannot fail and that nobody runs is not
+# verification, it is a script. This is the caller, and it holds the verdicts.
+#
+# EXPECTED VERDICTS ARE RECORDED, NOT ASSUMED GREEN. A probe that is KNOWN to
+# diverge is listed as DIVERGE with the reason. That is deliberate: hiding a real
+# divergence behind an all-must-agree suite would be the same mistake as a green
+# suite measuring the wrong artifact. Either direction is a failure -- an
+# expected-AGREE probe that diverges, and an expected-DIVERGE probe that either
+# agrees (the open item closed, update this file) or diverges DIFFERENTLY.
+set -uo pipefail
+D="$(cd "$(dirname "$0")" && pwd)"
+cd "$D"
+
+# probe                 expected   why
+EXPECTED="
+probe0.S                AGREE      smoke: the harness itself
+p1_queries.S            AGREE      the metadata query family
+p2_derive.S             DIVERGE    R30: this probe's last instruction is an UNDEFINED
+p3_faults.S             DIVERGE    R24 open half, second sighting: word 6 is mtval from
+p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
+p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
+"
+#                                  FIXTURES inside the architectural reset, at
+#                                  different indices with different contents. c0-c9
+#                                  and c15 converged when Sail gained veda_reset_crf().
+#                                  Getting the fixtures out of reset is its own
+#                                  increment -- see DESIGN_07 R24.
+#
+# p2_derive word 12 is the trap counter: Sail 1, RTL 0. The instruction is
+# custom-0/funct3=000/funct7=0001010, which is NOT a defined encoding -- that
+# space holds only 0000011 Populate, 0000100 Populate-Fast, 0000101 page-in.
+# Sail raises Illegal_Instruction, correctly. The RTL silently executes nothing:
+# $veda_illegal_instr is a list of specific refusals with no catch-all for
+# unrecognised encodings in the Veda opcodes. A core that silently ignores
+# instructions it does not know is a NOP sled through anything the model refuses.
+# The probe's author meant to write OCA (which is custom-2/funct3=001) and typed
+# the wrong opcode; the typo found a real defect. See DESIGN_07 R30.
+#
+# p3_faults word 6 is mtval: Sail 0x162 = (c11<<5)|0x02, RTL 0x16a =
+# (c11<<5)|0x0A. The instruction dereferences c11 -- a FIXTURE register. Sail's
+# c11 is a sealed region-2 capability whose generation is stale; the RTL's is
+# the residency fixture. Same root cause as p_reset_crf, seen through a second
+# probe, and it closes when the fixtures leave the architectural reset.
+
+pass=0; fail=0; results=()
+while read -r probe expected _rest; do
+  [ -z "${probe:-}" ] && continue
+  out="$(./rundiff.sh "probes/$probe" 2>&1)"; rc=$?
+  case $rc in
+    0) got=AGREE ;;
+    1) got=DIVERGE ;;
+    *) got=ERROR ;;
+  esac
+  if [ "$got" = "$expected" ]; then
+    if [ "$got" = "DIVERGE" ]; then
+      # An expected divergence must stay the SAME divergence. Pin the word list.
+      name="${probe%.S}"
+      sig="$(diff "$name.s8" "$name.r8" | md5sum | cut -c1-12)"
+      if [ -f "$name.divergence" ]; then
+        if [ "$sig" != "$(cat "$name.divergence")" ]; then
+          results+=("FAIL      $probe -- diverges, but DIFFERENTLY than recorded"); fail=$((fail+1)); continue
+        fi
+      else
+        echo "$sig" > "$name.divergence"
+        results+=("BASELINE  $probe -- recorded the known divergence"); pass=$((pass+1)); continue
+      fi
+    fi
+    results+=("ok        $probe ($got)"); pass=$((pass+1))
+  else
+    results+=("FAIL      $probe -- expected $expected, got $got"); fail=$((fail+1))
+    echo "$out" | head -30
+  fi
+done <<< "$EXPECTED"
+
+echo "=== cross-layer differential results ==="
+for r in "${results[@]}"; do echo "$r"; done
+echo "---"
+echo "$pass/$((pass+fail)) as expected"
+[ "$fail" -eq 0 ] || exit 1
