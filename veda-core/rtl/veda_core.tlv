@@ -1172,9 +1172,58 @@
          //  needed.
          // ─────────────────────────────────────────────────────────
          $csr_addr[11:0] = $instr[31:20];
-         $is_csrrw = $op_is_system && ($funct3 == 3'b001);
-         $is_csrrs = $op_is_system && ($funct3 == 3'b010);
-         $is_csr_access = $is_csrrw || $is_csrrs;
+         // ═══════════════════════════════════════════════════════════════════
+         //  R33c -- ALL SIX Zicsr FORMS, not two.
+         //
+         //  The comment above records the original scope cut honestly, and the
+         //  reasoning was sound for the trap handlers this core writes. It stops
+         //  being sound once the machine has to be FAIL-CLOSED, for two reasons.
+         //
+         //  (1) These four are a class-B debt: allocated in the claimed ISA and
+         //  missing here. A decode catch-all would turn them into
+         //  illegal-instruction, which is a DIFFERENT WRONG ANSWER, not a fix.
+         //  They block R33b until they exist.
+         //
+         //  (2) THEY ALSO SILENTLY DEFEAT R32, WHICH ALREADY SHIPPED.
+         //  $veda_csr_undef is gated on $is_csr_access, and $is_csr_access was
+         //  the OR of just CSRRW and CSRRS -- so a `csrrci` to a nonexistent CSR
+         //  was DOUBLY silent: the instruction did not decode, and the address
+         //  validity check did not fire either. Extending this OR closes that
+         //  automatically, and it extends the compartment escape gates
+         //  ($veda_csr_escape_violation, keyed on $csr_write_en) to the new
+         //  forms in the same stroke -- `csrrci 0x7C1` is now refused exactly as
+         //  `csrrw 0x7C1` is. That was the real hazard: four write paths into
+         //  the compartment-state CSRs that no gate had ever seen.
+         //
+         //  ENCODING, from the official model (extensions/Zicsr/zicsr_insts.sail
+         //  read in full): funct3 = {is_imm, encdec_csrop} with csrop in
+         //  {01 RW, 10 RS, 11 RC}. So 001/010/011 are the register forms and
+         //  101/110/111 the immediate forms, and funct3 000 and 100 are the only
+         //  unallocated slots in this opcode. The immediate is the rs1 FIELD
+         //  itself, zero-extended -- not a register read.
+         //
+         //  THE ACCESS-TYPE TABLE IS NOT DECORATION. csr_access_type() in that
+         //  file says a CSRRS or CSRRC whose source is zero is a pure READ and
+         //  must NOT write. `csrr rd, csr` is exactly that -- CSRRS with rs1=x0
+         //  -- and this core's own trap handlers use it constantly. Getting it
+         //  wrong would make every `csrr` a read-modify-write of the CSR with
+         //  itself, which is harmless for an ordinary register and NOT harmless
+         //  for one with write side effects.
+         //
+         //  Not mirrored, deliberately: the model's "a pure write (CSRRW with
+         //  rd == x0) generates no read side-effects" rule. No CSR in this core
+         //  has a read side effect, so the distinction is unobservable here.
+         //  Recorded rather than silently skipped.
+         // ═══════════════════════════════════════════════════════════════════
+         $is_csrrw  = $op_is_system && ($funct3 == 3'b001);
+         $is_csrrs  = $op_is_system && ($funct3 == 3'b010);
+         $is_csrrc  = $op_is_system && ($funct3 == 3'b011);
+         $is_csrrwi = $op_is_system && ($funct3 == 3'b101);
+         $is_csrrsi = $op_is_system && ($funct3 == 3'b110);
+         $is_csrrci = $op_is_system && ($funct3 == 3'b111);
+         $is_csr_imm = $is_csrrwi || $is_csrrsi || $is_csrrci;
+         $is_csr_access = $is_csrrw || $is_csrrs || $is_csrrc ||
+                          $is_csrrwi || $is_csrrsi || $is_csrrci;
          $csr_is_mtvec   = ($csr_addr == 12'h305);
          $csr_is_mscratch = ($csr_addr == 12'h340);
          $csr_is_mepc    = ($csr_addr == 12'h341);
@@ -1253,6 +1302,28 @@
          // PCC-reset for free, by construction" (MILESTONE_21_RESULTS.md).
          // EBREAK remains deferred -- not added here.
          $is_ecall = ($instr == 32'h00000073);
+         // ═══════════════════════════════════════════════════════════════════
+         //  R33d -- EBREAK, 0x00100073, differing from ECALL only in bit 20.
+         //
+         //  It is ALLOCATED in RV64I, so it is a class-B debt and not a decode
+         //  hole, and the distinction decides the fix. Sail
+         //  (extensions/I/base_insts.sail) executes
+         //  trap(make_sync_exception(E_Breakpoint(Brk_Software), PC)) -- mcause
+         //  THREE, not two, and mtval is the FAULTING PC rather than the
+         //  instruction word. A decode catch-all would have given it mcause 2
+         //  with mtval = the word: a confidently wrong answer, and one no test
+         //  in either suite could have caught. That is why this lands before the
+         //  catch-all rather than inside it.
+         //
+         //  BOTH VALUES MEASURED, not assumed. The model's mtval for a
+         //  breakpoint is policy-controlled -- xtval_exception_value() keys it
+         //  on software_breakpoint_writes_xtval -- so this project's own config
+         //  was run rather than read: veda_test_sail.json sets
+         //  base.xtval_nonzero.software_breakpoint = true, and Sail then writes
+         //  the ebreak's own PC (difftest/probes/p10_ebreak.S: mcause 0x03,
+         //  mtval 0x8000001c, which is exactly where the ebreak sits).
+         // ═══════════════════════════════════════════════════════════════════
+         $is_ebreak = ($instr == 32'h00100073);
 
          $is_lb  = $op_is_load && ($funct3 == 3'b000);
          $is_lh  = $op_is_load && ($funct3 == 3'b001);
@@ -4304,7 +4375,11 @@
                              // SEPARATE lists in this file. A new illegal source must
                              // join both -- one alone gives a trap with the wrong cause,
                              // or a cause with no trap.
-                             $veda_undef_encoding || $veda_csr_undef ||
+                             $veda_undef_encoding || $base_undef_encoding || $veda_csr_undef ||
+                             // R33d: EBREAK is a real synchronous exception, not
+                             // an illegal instruction -- it joins the trap list
+                             // but deliberately NOT $veda_illegal_instr below.
+                             $is_ebreak ||
                              $veda_atomic_violation || $veda_ocinvoke_violation ||
                              $veda_ocjalr_violation || $veda_ocreturn_violation ||
                              $veda_bind_trap || $veda_pcc_violation ||
@@ -4415,6 +4490,74 @@
          //  omission was invisible.
          // ═══════════════════════════════════════════════════════════════════
          $veda_op_claimed = $op_is_custom0 || $op_is_custom1 || $op_is_custom2 || $op_is_custom3;
+
+         // ═══════════════════════════════════════════════════════════════════
+         //  R33b -- THE BASE ISA IS FAIL-CLOSED TOO.
+         //
+         //  R30 closed Veda's four custom opcodes. This closes the other 124.
+         //  Written as the COMPLEMENT rather than a positive opcode list, so
+         //  $veda_undef_encoding and $base_undef_encoding partition the whole
+         //  opcode space with no third region: an encoding is either Veda's or
+         //  it is here, never neither. A positive list would have introduced a
+         //  region belonging to nobody, which is the shape of the hole being
+         //  closed.
+         //
+         //  R30's CHECKABLE RULE DOES NOT TRANSFER, and that is why the base
+         //  side went unnoticed for longer. Over there the rule is "a terminal
+         //  is a comparison against $opcode/$funct3/$funct7, an umbrella is an
+         //  OR", and it is sound because every Veda umbrella literally is an OR.
+         //  Here $is_load, $is_store, $is_jalr and $is_fence were each a plain
+         //  comparison against $opcode ALONE -- umbrellas written in the exact
+         //  shape the rule calls safe. R33a narrowed all four first; one of them
+         //  was clearing capability tags from an encoding RV64I does not define.
+         //
+         //  ORDER WAS NOT A STYLE CHOICE. None of the side-effect paths are
+         //  gated on $veda_trap_taken, so a catch-all shipped BEFORE R33a would
+         //  have produced a machine reporting mcause 0x02 with mtval holding the
+         //  word -- which a handler correctly reads as "the instruction did not
+         //  execute" -- while the tag clear still happened. It would have looked
+         //  closed and the suite would have passed.
+         //
+         //  AND IT COULD NOT SHIP UNTIL THE CLASS-B DEBTS CLOSED. Five encodings
+         //  were ALLOCATED in the claimed ISA and missing here, and a catch-all
+         //  turns a missing FEATURE into an illegal-instruction, which is a
+         //  different wrong answer rather than a fix. EBREAK wanted mcause 3 and
+         //  mtval = the faulting PC (R33d); CSRRC/CSRRWI/CSRRSI/CSRRCI wanted a
+         //  real read-modify-write (R33c). Both landed first, so the carve-out
+         //  this catch-all would otherwise have needed is EMPTY.
+         //
+         //  PURELY ADDITIVE -- a trap and nothing else -- and that is proven
+         //  rather than assumed. After R33a every effect path is an OR of
+         //  positive decode terms: $reg_write, $pc_src, $branch_taken, the store
+         //  block and the load mux all read false for a word no terminal claims.
+         //  So no side effect needs squashing; the instruction already did
+         //  nothing, and now it also traps.
+         //
+         //  59 TERMINALS. The three opcode-only entries -- LUI, AUIPC, JAL --
+         //  are correct as such: U-type and J-type have no funct fields to
+         //  constrain. Every other entry pins funct3, and where RV64 needs it,
+         //  funct6 (the 6-bit shamt forms) or funct7.
+         // ═══════════════════════════════════════════════════════════════════
+         $base_decoded =
+            // U-type and J-type: no funct fields exist to check
+            $is_lui || $is_auipc || $is_jal ||
+            $is_jalr ||
+            $is_beq || $is_bne || $is_blt || $is_bge || $is_bltu || $is_bgeu ||
+            // seven loads, not eight: funct3=111 is not LDU on RV64
+            $is_lb || $is_lh || $is_lw || $is_ld || $is_lbu || $is_lhu || $is_lwu ||
+            $is_sb || $is_sh || $is_sw || $is_sd ||
+            $is_addi || $is_slti || $is_sltiu || $is_xori || $is_ori || $is_andi ||
+            $is_slli || $is_srli || $is_srai ||
+            $is_add || $is_sub || $is_sll || $is_slt || $is_sltu || $is_xor ||
+            $is_srl || $is_sra || $is_or || $is_and ||
+            $is_addiw || $is_slliw || $is_srliw || $is_sraiw ||
+            $is_addw || $is_subw || $is_sllw || $is_srlw || $is_sraw ||
+            $is_fence ||
+            // SYSTEM: the three fixed literals and all six Zicsr forms
+            $is_ecall || $is_ebreak || $is_mret ||
+            $is_csrrw || $is_csrrs || $is_csrrc ||
+            $is_csrrwi || $is_csrrsi || $is_csrrci;
+         $base_undef_encoding = !$veda_op_claimed && !$base_decoded;
          $veda_decoded =
             // custom-0
             $is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_page_in ||
@@ -4467,6 +4610,7 @@
          $veda_csr_undef = $is_csr_access && (!$csr_addr_known || ($csr_write_en && $csr_is_readonly));
 
          $veda_illegal_instr = $veda_undef_encoding ||
+                                $base_undef_encoding ||
                                 $veda_csr_undef ||
                                 $veda_csr_escape_violation ||
                                 $veda_odt_page_out_refusal ||
@@ -4582,10 +4726,21 @@
          // to the CSR"), matching this project's own real trap-handler
          // pattern (`csrr t3, mcause` expands to exactly this form and
          // must never attempt to write mcause).
-         $csr_wdata[63:0] = $is_csrrw ? $rs1_data :
-                             $is_csrrs ? ($csr_rdata | $rs1_data) :
-                                         64'b0;
-         $csr_write_en = $is_csr_access && !($is_csrrs && ($rs1 == 5'b0));
+         // R33c: the operand is the rs1 REGISTER for the three register forms and
+         // the rs1 FIELD, zero-extended, for the three immediate forms. Same five
+         // bits, read two different ways.
+         $csr_operand[63:0] = $is_csr_imm ? {59'b0, $rs1} : $rs1_data;
+         $csr_wdata[63:0] = ($is_csrrw || $is_csrrwi) ? $csr_operand :
+                             ($is_csrrs || $is_csrrsi) ? ($csr_rdata | $csr_operand) :
+                             ($is_csrrc || $is_csrrci) ? ($csr_rdata & ~$csr_operand) :
+                                                         64'b0;
+         // csr_access_type(): a SET or CLEAR whose source is zero is a pure READ
+         // and must not write. That is what `csrr rd, csr` expands to, and this
+         // core's own trap handlers depend on it. Keyed on the rs1 FIELD, which
+         // is the right test for both the register and the immediate forms.
+         $csr_src_is_zero = ($rs1 == 5'b0);
+         $csr_write_en = $is_csr_access &&
+                         !(($is_csrrs || $is_csrrc || $is_csrrsi || $is_csrrci) && $csr_src_is_zero);
          // RTL MILESTONE 20 (Sail mirror, MILESTONE_20_RESULTS.md): the
          // real, empirically-confirmed compartment-state CSR
          // self-escape -- code entered via a real OCInvoke could simply
@@ -4682,6 +4837,12 @@
                          // only possible value since this core only
                          // ever runs M-mode.
                          (>>1$veda_trap_taken) ? (>>1$veda_illegal_instr ? 64'h02 :
+                                                   // R33d: Breakpoint is cause 3.
+                                                   // Ahead of the ecall arm only
+                                                   // for readability -- the two
+                                                   // decodes are disjoint 32-bit
+                                                   // literals.
+                                                   >>1$is_ebreak ? 64'h03 :
                                                    >>1$is_ecall ? 64'h0B : 64'h18) :
                                                   >>1$mcause;
          $mtval[63:0] = $reset ? 64'b0 :
@@ -4721,7 +4882,14 @@
                         // below is built from $veda_trap_cap_idx/_cause,
                         // which ecall never populates, so it needs its
                         // own explicit branch rather than falling through.
-                        (>>1$veda_trap_taken) ? (>>1$veda_illegal_instr ? {32'b0, >>1$instr}
+                        (>>1$veda_trap_taken) ? (
+                                                  // R33d: the model writes the
+                                                  // FAULTING PC for a software
+                                                  // breakpoint, not the word.
+                                                  // Measured against this
+                                                  // project's own config.
+                                                  >>1$is_ebreak ? >>1$pc
+                                                  : >>1$veda_illegal_instr ? {32'b0, >>1$instr}
                                                   : >>1$veda_purecap_violation ? {54'b0, 5'b10001, 5'b00111}
                                                   : >>1$veda_pcc_violation ? {54'b0, 5'b10000, 5'b00001}
                                                   : >>1$is_ecall ? 64'b0

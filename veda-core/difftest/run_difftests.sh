@@ -28,7 +28,9 @@ p5_reserved.S           AGREE      R30 CLOSED: three classes of unallocated enco
 p6_overbroad.S          AGREE      R30 CLOSED: the four over-broad decoders are narrowed
 p7_csr_space.S          AGREE      R32 CLOSED: undefined CSR addresses and read-only
 p8_reserved_bits.S      AGREE      R30(b) CLOSED: reserved-zero fields inside allocated
-p9_tag_destroy.S        DIVERGE    R33a CLOSED the capability kill; the remaining word is
+p10_ebreak.S            AGREE      R33d: EBREAK is mcause 3 with mtval = the faulting PC
+p11_csr_forms.S         AGREE      R33c: all six Zicsr forms, and R32 now sees them
+p9_tag_destroy.S        AGREE      R33 CLOSED: the capability kill AND the trap
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -119,6 +121,20 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 # smoke 88/88 unchanged, as predicted); R33b is a behaviour change by design.
 # Merging them would destroy the ability to attribute a red suite to one of
 # them. DESIGN_07 R33.
+#
+# p10_ebreak and p11_csr_forms are the class-B debts, and they had to close
+# BEFORE the catch-all. Both are ALLOCATED in the claimed ISA and were missing,
+# so a catch-all would have turned a missing FEATURE into illegal-instruction --
+# a different wrong answer, and one no test here could have caught. EBREAK wants
+# mcause 3 with mtval = the faulting PC, both MEASURED against this project's own
+# Sail config rather than assumed, since the breakpoint mtval is policy-
+# controlled. The four CSR forms want a real read-modify-write, including the
+# rule that a SET or CLEAR with a zero source is a pure read that must not write
+# -- which is what `csrr` expands to and what every trap handler here depends on.
+#
+# The CSR forms also completed R32, which had already shipped: $veda_csr_undef
+# is gated on $is_csr_access, and that was the OR of CSRRW and CSRRS only, so a
+# csrrci to a nonexistent CSR was doubly silent. p11 w10 pins that.
 #
 # p7_csr_space is a SEPARATE surface and the encoding catch-all cannot reach it.
 # Sail is fail-closed for CSR addresses by the same construction it uses for
