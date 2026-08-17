@@ -475,6 +475,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r24.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R24 CRF reset / rebind into an untouched register)"
 vvp "$SIM/sim_r24.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r24_crf_reset.hex"
 
+echo "==> R35: Compiling (veda_attr privilege term)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r35.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r35_attr_priv.sv"
+echo "==> Simulating (R35 veda_attr privilege)"
+vvp "$SIM/sim_r35.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r35_attr_priv.hex"
+
 echo "==> R26: Compiling (compartment authority follows the NAME, not the bound)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r26.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r26_authority.sv"
 echo "==> Simulating (R26 sentinel-Length compartment escape)"

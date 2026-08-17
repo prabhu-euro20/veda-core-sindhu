@@ -5287,7 +5287,56 @@
          // object real but permission-less until software actually sets
          // this CSR, matching the Sail side's own identical reasoning.
          $veda_attr[63:0] = $reset ? 64'b0 :
-                              (>>1$csr_write_en && >>1$csr_is_veda_attr) ? >>1$csr_wdata[63:0] :
+                              // ═══════════════════════════════════════════
+                              //  R35 -- THE PRIVILEGE TERM THIS ARM NEVER HAD.
+                              //
+                              //  Four of the five compartment-state CSR write
+                              //  arms carry `&& >>1$priv`. R27 added it to those
+                              //  four. This one sat between them and did not get
+                              //  it -- I walked past it in that increment.
+                              //
+                              //  Sail refuses the write: csrPriv(0x7C4) is bits
+                              //  [9:8] = 0b11, Machine-only by the RISC-V
+                              //  convention, enforced by the generic
+                              //  check_CSR_priv before any Veda clause runs. So
+                              //  this was an RTL-ONLY authority grant, of the
+                              //  same shape as everything else found this
+                              //  session: a gate present on one layer, absent on
+                              //  the other, on a path that feeds authority.
+                              //
+                              //  WHAT IT GRANTED, stated at its real size. This
+                              //  register supplies Length and Perms to
+                              //  Populate-Fast (veda_attr[55:16] | [15:0]). It
+                              //  is not itself a mint. But a principal after
+                              //  veda.droppriv -- holding neither privilege nor
+                              //  a tagged ODA -- could CHOOSE THE LENGTH AND
+                              //  PERMS OF AN OBJECT A LATER PRIVILEGED
+                              //  POPULATE-FAST WILL MINT. Control over the
+                              //  contents of someone else's mint, which on a
+                              //  machine whose thesis is derived authority is
+                              //  exactly the wrong direction.
+                              //
+                              //  ONLY THE PRIVILEGE TERM, deliberately. The
+                              //  obvious companion -- adding $csr_is_veda_attr
+                              //  to $veda_csr_escape_violation so a COMPARTMENT
+                              //  cannot stage it either -- is REFUTED BY
+                              //  MEASUREMENT: veda_smoke_m14.S:66,
+                              //  veda_smoke_r11b_pin.S:127 and
+                              //  veda_smoke_r11_crossing_neg.S:169 all write
+                              //  0x7C4 from INSIDE a compartment, with no
+                              //  ocreturn or trap in between, and they are not
+                              //  test bugs. They are the documented return path:
+                              //  leaving a compartment needs a max-Length code
+                              //  object, so the compartment must be able to
+                              //  stage the descriptor that builds it. Blocking
+                              //  that would break the architecture's own way
+                              //  out. Recorded rather than shipped.
+                              //
+                              //  Measured before editing: NO test in the corpus
+                              //  writes 0x7C4 after veda.droppriv, so the
+                              //  privilege half costs nothing.
+                              // ═══════════════════════════════════════════
+                              (>>1$csr_write_en && >>1$csr_is_veda_attr && >>1$priv) ? >>1$csr_wdata[63:0] :
                                                                             >>1$veda_attr;
          // RTL Milestone 19: veda_mode, bit 0 = veda_purecap. Identical
          // simple reset/CSRRW-only pattern as veda_attr directly above --
