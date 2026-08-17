@@ -95,3 +95,15 @@ toolchain/*/build/
 dist/
 node_modules/
 veda-core/security_trap_demo/
+
+# R29: artifacts of the from-source assembly step added to
+# rtl/run_veda_smoke_test.sh. The .S files are the source of truth; .elf/.hex
+# and the assembler's stderr capture are all rebuilt on every run.
+**/sim/*.elf
+**/sim/*.aserr
+**/difftest/*.aserr
+# rundiff.sh rebuilds this from the current veda_core.sv every run. Committed,
+# it let a "differential" run compare a current Sail model against RTL of some
+# unknown vintage.
+**/difftest/*.vvp
+**/difftest/*.o
