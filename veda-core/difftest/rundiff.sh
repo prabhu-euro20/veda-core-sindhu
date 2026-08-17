@@ -17,7 +17,13 @@ SRC="$1"; NAME="$(basename "${SRC%.S}")"
 # project, so this harness only ran on one machine.
 TC="$(cd "$D/../.." && pwd)/toolchain/riscv-collab-gcc/riscv/bin"
 SIM=/home/prabhu/veda-core-sindhu/toolchain/sail-riscv/build/c_emulator/sail_riscv_sim
-CFG=/home/prabhu/veda-core-sindhu/veda-core/sail_tests/veda_test_sail.json
+# R24 (open half): the harness gets its OWN config, and that is the whole point.
+# The Sail-side fixture switch lives in a JSON, and the suites and this harness
+# cannot share one file if one needs fixtures ON and the other OFF. Sharing it
+# was exactly the drift channel the adversarial pass on this design named. Two
+# files, two values, and this harness -- which can now fail and is actually run
+# (R31) -- is what would notice them drifting.
+CFG="$D/veda_diff_sail.json"
 RTLSIM=/home/prabhu/veda-core-sindhu/veda-core/rtl/sim
 
 "$TC/riscv64-unknown-elf-as" -march=rv64i_zicsr -o "$D/$NAME.o" "$SRC" 2>"$D/$NAME.aserr" || { echo "ASM-FAIL $NAME"; cat "$D/$NAME.aserr"; exit 2; }

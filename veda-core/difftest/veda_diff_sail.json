@@ -498,7 +498,7 @@
     },
     "Veda": {
       "supported": true,
-      "test_fixtures": true
+      "test_fixtures": false
     },
     "Zicbop": {
       "supported": false

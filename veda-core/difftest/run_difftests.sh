@@ -22,7 +22,7 @@ EXPECTED="
 probe0.S                AGREE      smoke: the harness itself
 p1_queries.S            AGREE      the metadata query family
 p2_derive.S             AGREE      CSetBounds / CAndPerm derivation -- R30 CLOSED, so its
-p3_faults.S             DIVERGE    R24 open half, second sighting: word 6 is mtval from
+p3_faults.S             AGREE      the dereference fault causes -- its c11 divergence was the
 p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
 p5_reserved.S           AGREE      R30 CLOSED: three classes of unallocated encoding, all
 p6_overbroad.S          AGREE      R30 CLOSED: the four over-broad decoders are narrowed
@@ -31,7 +31,7 @@ p8_reserved_bits.S      AGREE      R30(b) CLOSED: reserved-zero fields inside al
 p10_ebreak.S            AGREE      R33d: EBREAK is mcause 3 with mtval = the faulting PC
 p11_csr_forms.S         AGREE      R33c: all six Zicsr forms, and R32 now sees them
 p9_tag_destroy.S        AGREE      R33 CLOSED: the capability kill AND the trap
-p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
+p_reset_crf.S           AGREE      R24 CLOSED: all 16 capability registers agree at reset
 "
 #                                  FIXTURES inside the architectural reset, at
 #                                  different indices with different contents. c0-c9

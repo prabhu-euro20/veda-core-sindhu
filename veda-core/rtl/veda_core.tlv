@@ -984,6 +984,37 @@
          tcm_scratch_tag[veda_ts_i] = 1'b0;
    end
 
+   // ═══════════════════════════════════════════════════════════════════════
+   //  R24 (open half) -- TEST FIXTURES ARE NOT ARCHITECTURE.
+   //
+   //  Four capability registers are seeded at reset below (c11-c14) so the
+   //  crossing and residency tests have states the ISA deliberately cannot
+   //  construct. The scaffolding is legitimate; putting it in the ARCHITECTURAL
+   //  RESET is not. It made reset hand the running program four TAGGED
+   //  capabilities -- one of them dereferenceable on instruction one, Base
+   //  0x8001_0300, Perms Load|NMC, unsealed -- as a normative claim about what
+   //  this machine looks like at power-on. On a machine whose thesis is that
+   //  authority is derived, reset-with-authority is the one state where nothing
+   //  derived it.
+   //
+   //  This plusarg is the layer-parallel twin of Sail's
+   //  extensions.Veda.test_fixtures config key. OFF by default on both layers.
+   //  The self-check suites pass both and keep every assertion; the differential
+   //  harness passes NEITHER, so it finally measures architecture rather than
+   //  scaffolding, which is what the R24 probe was built to do.
+   //
+   //  Same $test$plusargs idiom as act4_mode directly below, deliberately --
+   //  that one is already proven to reach TLV expressions from an SV initial
+   //  block, which is exactly what the /vreg reset arms need.
+   // ═══════════════════════════════════════════════════════════════════════
+   logic veda_fixtures_mode;
+   initial begin
+      veda_fixtures_mode = 1'b0;
+      if ($test$plusargs("veda_fixtures")) begin
+         veda_fixtures_mode = 1'b1;
+      end
+   end
+
    logic act4_mode;
    initial begin
       string elf_hex_path;
@@ -2774,7 +2805,7 @@
             //  chosen because every read of them in the corpus is preceded
             //  by a write (grep-verified before choosing), so seeding them
             //  cannot disturb an existing test.
-            $tag = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11 || #vreg == 12 || #vreg == 13 || #vreg == 14) ? 1'b1 : 1'b0) :
+            $tag = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11 || #vreg == 12 || #vreg == 13 || #vreg == 14)) ? 1'b1 : 1'b0) :
                    // Milestone 12: Bind/Bind-NoTrap's own success now
                    // additionally requires owner_ok -- a wrong-owner
                    // live object soft-fails here exactly like an ODT
@@ -2862,7 +2893,8 @@
             // crossing gate reads -- the local half is never looked up,
             // because the gate fires before any ODT access.
             $object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ?
-                                 ((#vreg == 11) ? 44'd104 :
+                                 (!veda_fixtures_mode ? 44'b0 :
+                                  (#vreg == 11) ? 44'd104 :
                                   (#vreg == 12) ? 44'd33554452 :
                                   (#vreg == 13) ? 44'd33554453 :
                                   (#vreg == 14) ? 44'd50331670 : 44'b0) :
@@ -2895,7 +2927,7 @@
                                $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_object_id : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_object_id : |cpu>>1$veda_oda_object_id) :
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
                                                                     $RETAIN;
-            $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 56'h8001_0300 : 56'b0) :
+            $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 56'h8001_0300 : 56'b0) :
                           $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_base : 56'b0) :
                           ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_base :
                           $oca_wr_en        ? |cpu>>1$veda_rs1cap_base :
@@ -2907,7 +2939,7 @@
                           $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_base : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_base : |cpu>>1$veda_oda_base) :
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
                                               $RETAIN;
-            $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((#vreg == 11) ? 40'h40 : 40'b0) :
+            $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 40'h40 : 40'b0) :
                             $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_length : 40'b0) :
                             ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? |cpu>>1$veda_odt_length :
                             $oca_wr_en        ? |cpu>>1$veda_rs1cap_length :
@@ -2959,7 +2991,8 @@
             // of OCInvoke's capability checks, so the region gate is
             // provably the FIRST failure -- which is the whole point.
             $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ?
-                             ((#vreg == 11) ? 16'h100C :
+                             (!veda_fixtures_mode ? 16'b0 :
+                              (#vreg == 11) ? 16'h100C :
                               (#vreg == 12) ? 16'h0402 :
                               (#vreg == 13) ? 16'h0400 :
                               (#vreg == 14) ? 16'h0002 : 16'b0) :
@@ -3021,7 +3054,8 @@
             // 0xFFFE, the CSealEntry-minted sentry type OCReturn requires.
             // 0xFFFF (the default) means UNSEALED.
             $otype[15:0] = (|cpu$reset || |cpu>>1$reset) ?
-                             ((#vreg == 12 || #vreg == 13) ? 16'h0042 :
+                             (!veda_fixtures_mode ? 16'hFFFF :
+                              (#vreg == 12 || #vreg == 13) ? 16'h0042 :
                               (#vreg == 14) ? 16'hFFFE : 16'hFFFF) :
                            $bind_wr_en ? 16'hFFFF :
                            ($rebind_wr_en && |cpu>>1$veda_rebind_ok) ? 16'hFFFF :
