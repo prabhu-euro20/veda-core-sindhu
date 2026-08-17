@@ -470,6 +470,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r11_crossing_neg.vvp" "$SIM/veda_core.sv"
 echo "==> Simulating (RTL-7 R11 crossing revalidation)"
 vvp "$SIM/sim_r11_crossing_neg.vvp" +elf_hex="$SIM/veda_smoke_r11_crossing_neg.hex"
 
+echo "==> R24: Compiling (capability register file reset state)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r24.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r24_crf_reset.sv"
+echo "==> Simulating (R24 CRF reset / rebind into an untouched register)"
+vvp "$SIM/sim_r24.vvp" +elf_hex="$SIM/veda_smoke_r24_crf_reset.hex"
+
 echo "==> R26: Compiling (compartment authority follows the NAME, not the bound)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r26.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r26_authority.sv"
 echo "==> Simulating (R26 sentinel-Length compartment escape)"
