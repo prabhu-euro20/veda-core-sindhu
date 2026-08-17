@@ -1261,7 +1261,44 @@
          $is_lbu = $op_is_load && ($funct3 == 3'b100);
          $is_lhu = $op_is_load && ($funct3 == 3'b101);
          $is_lwu = $op_is_load && ($funct3 == 3'b110);
-         $is_load = $op_is_load;
+         // ═══════════════════════════════════════════════════════════════════
+         //  R33a -- FOUR UMBRELLAS THAT LOOKED LIKE TERMINALS.
+         //
+         //  These four were each a bare comparison against $opcode with no
+         //  funct3 test, so every unallocated funct3 in their opcode reached
+         //  their effect paths. R30's checkable rule -- "a terminal is a
+         //  comparison, an umbrella is an OR" -- is SOUND in Veda's space and
+         //  FALSE here, which is precisely why these went unnoticed: they are
+         //  written in the shape the rule calls safe.
+         //
+         //  AND ONE OF THEM IS A LIVE CAPABILITY-DESTRUCTION PRIMITIVE. The
+         //  store block at :5638 writes data through an if/else-if chain on
+         //  is_sb/is_sh/is_sw/is_sd with no else -- so an unallocated store
+         //  writes nothing, which is why it looked harmless -- but the TAG
+         //  INVALIDATION is a SEPARATE if at the same nesting level, gated only
+         //  on this umbrella. A store with funct3 in {100,101,110,111} therefore
+         //  CLEARS THE CAPABILITY TAG at rs1+imm and writes no data: a silent
+         //  capability kill from an instruction RV64I does not define.
+         //  Measured in difftest/probes/p9_tag_destroy.S -- tag 1 on Sail, 0
+         //  here, with a control proving a LEGAL store clears it on both, so
+         //  this is not "stores clear tags".
+         //
+         //  THIS IS ALSO WHY THE DECODE TIGHTENING LANDS BEFORE ANY CATCH-ALL.
+         //  None of the side-effect paths are gated on $veda_trap_taken, so a
+         //  catch-all alone would give a machine that reports mcause 0x02 with
+         //  mtval holding the word -- which a handler correctly reads as "the
+         //  instruction did not execute" -- while the tag clear still happened.
+         //  It would look closed, the suite would pass, and the primitive would
+         //  survive behind an illegal-instruction report.
+         //
+         //  RV64 HAS SEVEN LOADS, NOT EIGHT. funct3=111 is not LDU: the model's
+         //  valid_load_encdec guard (extensions/I/base_insts.sail:274) is
+         //  (width < xlen_bytes) | (not(is_unsigned) & width <= xlen_bytes), and
+         //  at width=8 unsigned both disjuncts are false. Built as the OR of the
+         //  per-width terminals this file already defines, so the set cannot
+         //  drift from the widths the datapath actually implements.
+         // ═══════════════════════════════════════════════════════════════════
+         $is_load = $is_lb || $is_lh || $is_lw || $is_ld || $is_lbu || $is_lhu || $is_lwu;
 
          $is_addi  = $op_is_imm && ($funct3 == 3'b000);
          $is_slti  = $op_is_imm && ($funct3 == 3'b010);
@@ -1279,7 +1316,7 @@
          $is_sh = $op_is_store && ($funct3 == 3'b001);
          $is_sw = $op_is_store && ($funct3 == 3'b010);
          $is_sd = $op_is_store && ($funct3 == 3'b011);
-         $is_store = $op_is_store;
+         $is_store = $is_sb || $is_sh || $is_sw || $is_sd;
 
          $is_add  = $op_is_reg && ($funct3 == 3'b000) && ($funct7 == 7'b0000000);
          $is_sub  = $op_is_reg && ($funct3 == 3'b000) && ($funct7 == 7'b0100000);
@@ -1301,7 +1338,7 @@
          $is_bltu = $op_is_branch && ($funct3 == 3'b110);
          $is_bgeu = $op_is_branch && ($funct3 == 3'b111);
 
-         $is_jalr = $op_is_jalr;
+         $is_jalr = $op_is_jalr && ($funct3 == 3'b000);
          $is_jal  = $op_is_jal;
 
          $is_addiw = $op_is_immw && ($funct3 == 3'b000);
@@ -1315,7 +1352,13 @@
          $is_srlw = $op_is_regw && ($funct3 == 3'b101) && ($funct7 == 7'b0000000);
          $is_sraw = $op_is_regw && ($funct3 == 3'b101) && ($funct7 == 7'b0100000);
 
-         $is_fence = $op_is_fence;
+         // FENCE is funct3=000 and NOTHING BELOW THAT. FENCE.TSO is a specific
+         // fm/pred/succ pattern inside funct3=000, so it is covered; the
+         // reserved fm/pred/succ combinations are, by the base spec, to be
+         // IGNORED rather than refused, so they must not be constrained here.
+         // Over-tightening this one is the predictable way to break the fence
+         // conformance test, which executes exactly those reserved words.
+         $is_fence = $op_is_fence && ($funct3 == 3'b000);
          // Decoded but intentionally unused this phase (FENCE is a
          // functional NOP -- no memory-ordering hazards exist in a
          // single-cycle, single-hart core); silences the SandPiper

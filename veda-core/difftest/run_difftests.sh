@@ -28,6 +28,7 @@ p5_reserved.S           AGREE      R30 CLOSED: three classes of unallocated enco
 p6_overbroad.S          AGREE      R30 CLOSED: the four over-broad decoders are narrowed
 p7_csr_space.S          AGREE      R32 CLOSED: undefined CSR addresses and read-only
 p8_reserved_bits.S      AGREE      R30(b) CLOSED: reserved-zero fields inside allocated
+p9_tag_destroy.S        DIVERGE    R33a CLOSED the capability kill; the remaining word is
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -99,6 +100,25 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 # The seven ODT instructions have ALL-GPR operands and therefore NO reserved
 # bits. That distinction was derived by parsing every encdec clause's field
 # roles, not assumed, and applying the terms uniformly would have broken them.
+#
+# p9_tag_destroy is the base ISA, not Veda's space, and it found the sharpest
+# thing in this whole sweep. The store block gates its DATA write on an
+# if/else-if chain over the four widths with no else -- so an unallocated store
+# writes nothing and looks harmless -- while the TAG INVALIDATION is a separate
+# if gated only on the $is_store umbrella, which was `$op_is_store`, opcode only.
+# A store with funct3 in {100,101,110,111} therefore CLEARED THE CAPABILITY TAG
+# and wrote no data: a silent capability kill from an instruction RV64I does not
+# define. Measured, then closed by narrowing the umbrella to the OR of the four
+# width terminals. Its control proves a LEGAL store clears the tag on both
+# layers, so the probe is not merely observing that stores clear tags.
+#
+# It stays DIVERGE on ONE word -- the trap count. R33a closed the destructive
+# side effect; the catch-all that makes the encoding actually TRAP is R33b, kept
+# separate on purpose because the two halves have opposite risk signatures.
+# R33a is behaviour-identical for every legitimate instruction (ACT4 51/51 and
+# smoke 88/88 unchanged, as predicted); R33b is a behaviour change by design.
+# Merging them would destroy the ability to attribute a red suite to one of
+# them. DESIGN_07 R33.
 #
 # p7_csr_space is a SEPARATE surface and the encoding catch-all cannot reach it.
 # Sail is fail-closed for CSR addresses by the same construction it uses for
