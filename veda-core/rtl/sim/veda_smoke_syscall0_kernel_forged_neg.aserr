@@ -1,1 +1,0 @@
-/home/prabhu/veda-core-sindhu/toolchain/riscv-collab-gcc/riscv/riscv64-unknown-elf/bin/ld: warning: sim/veda_smoke_syscall0_kernel_forged_neg.elf has a LOAD segment with RWX permissions
