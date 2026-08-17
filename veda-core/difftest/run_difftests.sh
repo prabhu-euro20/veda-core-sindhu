@@ -26,6 +26,7 @@ p3_faults.S             DIVERGE    R24 open half, second sighting: word 6 is mtv
 p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
 p5_reserved.S           DIVERGE    R30: three classes of unallocated encoding that Sail
 p6_overbroad.S          DIVERGE    R30(b): over-broad decoders -- fail-open ACTIVE, not silent
+p7_csr_space.S          DIVERGE    R32: the CSR ADDRESS space is a second fail-open
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -74,6 +75,16 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 #     records that too rather than assuming it alongside the others.
 #
 # Both flip to AGREE when the decode-completeness catch-all lands. DESIGN_07 R30.
+#
+# p7_csr_space is a SEPARATE surface and the encoding catch-all cannot reach it.
+# Sail is fail-closed for CSR addresses by the same construction it uses for
+# encodings -- postlude/csr_end.sail:11 is a last wildcard
+# `is_CSR_accessible(_) = false` -- and veda_regs.sail declares 0x7C0..0x7C8
+# only. The RTL has NO address-validity term anywhere: $csr_rdata's default arm
+# is 64'b0. Measured: csrrw on 0x7C9 traps on Sail and reads ZERO here, silently.
+# Zero is worse than a no-op, because it is a value software can act on. An
+# opcode-keyed catch-all cannot help: a CSR access is opcode 1110011, not one of
+# the four custom opcodes. Two fail-open surfaces, two fixes. DESIGN_07 R32.
 
 pass=0; fail=0; results=()
 while read -r probe expected _rest; do
