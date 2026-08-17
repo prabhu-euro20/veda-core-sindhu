@@ -1,6 +1,9 @@
 .section .text
 .global _start
 _start:
+    la   x30, trap_handler
+    csrw mtvec, x30
+    li   x27, 0
     # ─────────────────────────────────────────────────────────────
     # Veda-Core RTL Milestone 8: Rebind's three real failure/no-op
     # paths, each proving a distinct, deliberate design decision
@@ -58,16 +61,44 @@ _start:
     .insn r 0x5b, 0x0, 0x03, x23, x5, x0  # cgettag  x23, c5        -- expect 0  (Tag cleared)
     .insn r 0x5b, 0x0, 0x00, x24, x5, x0  # cgetbase x24, c5        -- expect 0x80010000 (Base UNCHANGED, not reset to 0/garbage)
 
-    # -- Negative 3: reserved mode (imm[1:0]=11) is a true no-op, not a
-    #    silent Bind -- regression test for the real gap this milestone
-    #    closed (mode field was decoded but never checked before now).
+    # -- Negative 3: reserved mode (imm[1:0]=11). R30 UPGRADED THIS FROM A
+    #    NO-OP TO A TRAP, and the destination-unchanged assertion below is
+    #    unchanged and still load-bearing -- what changed is HOW it stays
+    #    unchanged.
+    #
+    #    Milestone 8 closed the original gap: the mode field was decoded and
+    #    never checked, so EVERY mode value silently executed as plain Bind.
+    #    The fix made mode 0b11 a clean no-op. That was half right. Sail does
+    #    not treat it as a no-op -- veda_bind_insts.sail:276 maps
+    #    VEDA_BIND_RESERVED to Illegal_Instruction() BY NAME -- so this layer
+    #    was still fail-open, and this very test asserted the fail-open
+    #    behaviour as correct. A test can lock a defect in.
+    #
+    #    x27 counts traps, so the test now proves the destination is unchanged
+    #    BECAUSE the instruction was refused, not because it quietly did
+    #    nothing. Without the counter both behaviours look identical from the
+    #    destination register, which is exactly why this went unnoticed.
     li   x1, 1
     .insn i 0x0b, 0x5, x6, x1, 0  # veda.bind c6, x1        -- c6: Object_ID=1, Tag=1, Base=0x80010000
     li   x1, 2               # a DIFFERENT Object_ID (2, Base=0x80010100) -- if the old bug were
                               # still present, mode=11 would wrongly re-bind c6 to THIS object
-    .insn i 0x0b, 0x5, x6, x1, 3  # veda.bind (mode=11, reserved) c6, x1  -- must be a complete no-op
+    .insn i 0x0b, 0x5, x6, x1, 3  # veda.bind (mode=11, reserved) c6, x1  -- must TRAP (mcause 0x02)
     .insn r 0x5b, 0x0, 0x03, x25, x6, x0  # cgettag  x25, c6        -- expect 1  (unchanged -- still the ORIGINAL bind's Tag)
     .insn r 0x5b, 0x0, 0x00, x26, x6, x0  # cgetbase x26, c6        -- expect 0x80010000 (unchanged -- NOT Object_ID=2's 0x80010100)
 
+    csrr x28, mcause              # must be 0x02, illegal instruction
+
 1:
     j 1b
+
+# A HANDLER IS MANDATORY NOW, not tidiness. $mtvec resets to 0 and this file
+# never installed one. The moment the reserved mode starts trapping, the PC goes
+# to 0 -- outside elfmem's declared [0x8000_0000 : 0x8007_FFFF] -- the fetch
+# returns X, and the ENTIRE register file goes X. The failure would present as
+# every assertion reading xxxx rather than as one wrong value.
+trap_handler:
+    addi x27, x27, 1
+    csrr x29, mepc
+    addi x29, x29, 4
+    csrw mepc, x29
+    mret

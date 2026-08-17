@@ -21,12 +21,12 @@ cd "$D"
 EXPECTED="
 probe0.S                AGREE      smoke: the harness itself
 p1_queries.S            AGREE      the metadata query family
-p2_derive.S             DIVERGE    R30: this probe's last instruction is an UNDEFINED
+p2_derive.S             AGREE      CSetBounds / CAndPerm derivation -- R30 CLOSED, so its
 p3_faults.S             DIVERGE    R24 open half, second sighting: word 6 is mtval from
 p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
-p5_reserved.S           DIVERGE    R30: three classes of unallocated encoding that Sail
-p6_overbroad.S          DIVERGE    R30(b): over-broad decoders -- fail-open ACTIVE, not silent
-p7_csr_space.S          DIVERGE    R32: the CSR ADDRESS space is a second fail-open
+p5_reserved.S           AGREE      R30 CLOSED: three classes of unallocated encoding, all
+p6_overbroad.S          AGREE      R30 CLOSED: the four over-broad decoders are narrowed
+p7_csr_space.S          AGREE      R32 CLOSED: undefined CSR addresses and read-only
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -74,7 +74,15 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 #   the atomic op-select case is the one the RTL already guards, and the probe
 #     records that too rather than assuming it alongside the others.
 #
-# Both flip to AGREE when the decode-completeness catch-all lands. DESIGN_07 R30.
+# ALL FOUR NOW AGREE -- the catch-all landed and these four lines are the
+# evidence. They were recorded as DIVERGE first, deliberately, so that closing
+# the finding had to come back through this file: an expected-DIVERGE probe that
+# starts agreeing FAILS the suite until someone updates the verdict, which is how
+# a fix gets noticed rather than assumed. p2_derive is the sharpest of the four:
+# its own header records a draft where a wrong funct3 "decodes as nothing -- and
+# the probe still reported AGREE, because BOTH layers did the same no-op." That
+# encoding now traps on both, so the probe is a real derivation test again.
+# DESIGN_07 R30 and R32.
 #
 # p7_csr_space is a SEPARATE surface and the encoding catch-all cannot reach it.
 # Sail is fail-closed for CSR addresses by the same construction it uses for

@@ -1348,7 +1348,17 @@
          //  Veda-Core instruction.
          // ─────────────────────────────────────────────────────────
          $op_is_custom0 = ($opcode == 7'b0001011);
-         $is_veda_bind  = $op_is_custom0 && ($funct3 == 3'b101);
+         // R30: imm[11:2] MUST be zero. Sail's encdec pins
+         // `0b0000000000 @ mode` (veda_bind_insts.sail:173-175), so 1023 of the
+         // 1024 upper-immediate patterns are decode-undefined there. This layer
+         // tested opcode+funct3 only and read the mode out of $instr[21:20],
+         // which made every one of those patterns execute as a real Bind --
+         // measured, and Bind is the CAPABILITY-MINTING path
+         // (difftest/probes/p6_overbroad.S w0: cgettag reads 1 here, 0 on Sail).
+         // Narrowing the decode itself rather than adding a parallel gate is
+         // deliberate: every consumer downstream inherits it, so there is no
+         // second place to forget.
+         $is_veda_bind  = $op_is_custom0 && ($funct3 == 3'b101) && ($instr[31:22] == 10'b0);
          $is_veda_ocl   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000000);
          $is_veda_ocs   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000001);
          // OCL.C/OCS.C -- RTL Milestone 7 (VEDA_CORE_SPEC.md's own
@@ -1655,7 +1665,9 @@
          // funct7 = 0000000 claims one Custom-3 slot, leaving room for
          // more (the same "reserve, don't exhaust" principle already
          // used for Custom-3 as a whole).
-         $is_veda_droppriv = $op_is_custom3 && ($funct7 == 7'b0000000);
+         // R30: funct3 was never tested at all, so all eight values reached
+         // `$priv = 0` at :1020. Seven of them are encodings Sail refuses.
+         $is_veda_droppriv = $op_is_custom3 && ($funct7 == 7'b0000000) && ($funct3 == 3'b000);
 
          // rs1/rs2/rd here are ordinary GPRs, not capability registers --
          // ODT-Populate/Destroy operate on raw Object_ID/descriptor
@@ -1735,7 +1747,17 @@
          // Width scoped to D (64-bit) only this milestone, matching the
          // established D-only precedent already used for OCL.D/OCS.D and
          // Sail's own Veda-Atomic scope.
-         $is_veda_atomic  = $op_is_custom1 && ($funct3 == 3'b011);
+         // R30: the op-select field was never tested. Sail's encdec_veda_atomicop
+         // (veda_atomic_insts.sail:47-57) allocates exactly these nine of the
+         // thirty-two, and the two aq/rl bits are don't-care. Verified value by
+         // value against $veda_atomic_result's own arms below, which is where
+         // the RTL's real allocation lives.
+         $veda_atomic_op_known = ($veda_atomic_op == 5'b00001) || ($veda_atomic_op == 5'b00000) ||
+                                 ($veda_atomic_op == 5'b00100) || ($veda_atomic_op == 5'b01100) ||
+                                 ($veda_atomic_op == 5'b01000) || ($veda_atomic_op == 5'b10000) ||
+                                 ($veda_atomic_op == 5'b10100) || ($veda_atomic_op == 5'b11000) ||
+                                 ($veda_atomic_op == 5'b11100);
+         $is_veda_atomic  = $op_is_custom1 && ($funct3 == 3'b011) && $veda_atomic_op_known;
 
          $is_veda_nmc_add_w = $op_is_custom0 && ($funct3 == 3'b010) && ($funct7 == 7'b0000010);
          $is_veda_nmc_add_d = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000010);
@@ -3723,7 +3745,18 @@
          //  ($priv), the identical, already-established convention
          //  ODT-Populate/ODT-Destroy themselves already use below.
          // ─────────────────────────────────────────────────────────
-         $is_veda_ospecialrw = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010011);
+         // R30: the SCR selector sits in the rs2 field and was never validated.
+         // Sail's encdec_veda_scr (veda_cap_insts.sail:883-887) maps exactly
+         // three values, so 29 of 32 are decode-undefined there -- a hole in the
+         // MIDDLE of an allocated funct7, not at the edge of the space. Here the
+         // ODA write was gated on `!is_tsc && !is_ssc`, so every one of those 29
+         // reached the Object Descriptor Authority. Narrowing the decode makes
+         // the whole instruction undefined for a bad selector, which is exactly
+         // what Sail does, and it fixes the ODA gate as a side effect rather
+         // than needing the gate rewritten separately.
+         $veda_ospecialrw_sel_known = ($instr[24:20] == 5'b00000) || ($instr[24:20] == 5'b00001) ||
+                                      ($instr[24:20] == 5'b00010);
+         $is_veda_ospecialrw = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010011) && $veda_ospecialrw_sel_known;
          $veda_ospecialrw_violation = $is_veda_ospecialrw && !$priv;
 
          // RTL mirror of minimal OS kernel Milestone A
@@ -4183,6 +4216,11 @@
          $veda_trap_taken = $veda_ocl_violation || $veda_ocs_violation ||
                              $veda_oclc_violation || $veda_ocsc_violation ||
                              $veda_nmc_add_w_violation || $veda_nmc_add_d_violation ||
+                             // R30/R32: $veda_trap_taken and $veda_illegal_instr are
+                             // SEPARATE lists in this file. A new illegal source must
+                             // join both -- one alone gives a trap with the wrong cause,
+                             // or a cause with no trap.
+                             $veda_undef_encoding || $veda_csr_undef ||
                              $veda_atomic_violation || $veda_ocinvoke_violation ||
                              $veda_ocjalr_violation || $veda_ocreturn_violation ||
                              $veda_bind_trap || $veda_pcc_violation ||
@@ -4248,7 +4286,105 @@
          //  than duplicated. Adding a third hand-named signal to two
          //  ternaries would have worked and would have been the fourth
          //  place to forget next time.
-         $veda_illegal_instr = $veda_csr_escape_violation ||
+         // ═══════════════════════════════════════════════════════════════════
+         //  R30 -- FAIL-CLOSED DECODE. Every encoding in Veda's opcode space
+         //  that this core does not implement now traps, as the architecture
+         //  requires and as the model has always done.
+         //
+         //  THE MODEL IS FAIL-CLOSED BY CONSTRUCTION and says so:
+         //  model/sys/insts_begin.sail declares `ILLEGAL : word` with the
+         //  comment "the encdec mapping must come last to ensure that all
+         //  unmatched encodings decode to an illegal instruction", and the
+         //  wildcard clause lives in postlude/insts_end.sail. This layer had no
+         //  equivalent -- $veda_illegal_instr below was a list of named refusals
+         //  and was the ONLY illegal-instruction source in the file. An
+         //  unrecognised encoding fell through to $pc + 4 and retired.
+         //
+         //  MEASURED BEFORE FIXING, on both layers, in three classes:
+         //    veda.bind mode 0b11 -- not merely undefined; veda_bind_insts.sail
+         //      :276 maps VEDA_BIND_RESERVED to Illegal_Instruction() BY NAME.
+         //    custom-0 f3=000 f7=0001010 -- 125 of 128 funct7 unallocated there.
+         //    custom-2 f3=111 -- the whole funct3 unallocated.
+         //  See difftest/probes/p5_reserved.S and p6_overbroad.S.
+         //
+         //  NOT AN ESCALATION, and the record should say so plainly: no
+         //  fail-open encoding granted authority the executing code did not
+         //  already hold. The reason to close it is that FAIL-OPEN IS WHAT HIDES
+         //  BUGS, and this project has the receipt -- difftest/probes/p2_derive.S
+         //  records a draft that used the wrong funct3 for CAndPerm, "which
+         //  decodes as nothing -- and the probe still reported AGREE, because
+         //  BOTH layers did the same no-op." After this, that same slip TRAPS on
+         //  the instruction's own first test run.
+         //
+         //  TERMINALS ONLY, NEVER UMBRELLAS. $is_veda_bind, $is_veda_capquery
+         //  and $is_veda_csetbounds_either are OR-groups; listing one of them
+         //  here would re-open exactly the holes this closes, because an
+         //  umbrella is true for encodings none of its members claim. That is
+         //  how the four over-broad decoders above came to exist. The rule is
+         //  checkable rather than remembered: every name below must be defined
+         //  by a comparison against $opcode/$funct3/$funct7, not by an OR.
+         //
+         //  THE FAILURE DIRECTION INVERTS, which is the whole point. Add a new
+         //  Veda instruction and forget to list it here, and it TRAPS -- its own
+         //  directed test fails on the first simulation with mcause 0x02 and
+         //  mtval holding the exact offending word. Before this change the same
+         //  omission was invisible.
+         // ═══════════════════════════════════════════════════════════════════
+         $veda_op_claimed = $op_is_custom0 || $op_is_custom1 || $op_is_custom2 || $op_is_custom3;
+         $veda_decoded =
+            // custom-0
+            $is_veda_odt_populate || $is_veda_odt_populate_fast || $is_veda_odt_page_in ||
+            $is_veda_odt_destroy || $is_veda_odt_page_out || $is_veda_odt_set_domain ||
+            $is_veda_odt_set_cow || $is_veda_nmc_add_w || $is_veda_ocl || $is_veda_ocs ||
+            $is_veda_nmc_add_d || $is_veda_ocl_c || $is_veda_ocs_c ||
+            // custom-0 Bind: the three real modes. Mode 0b11 is deliberately
+            // absent -- it is VEDA_BIND_RESERVED and must trap.
+            $is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind ||
+            // custom-1
+            $is_veda_atomic ||
+            // custom-2
+            $is_veda_cgetbase || $is_veda_cgetlen || $is_veda_cgetperm || $is_veda_cgettag ||
+            $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset || $is_veda_cgetobjectid ||
+            $is_veda_csetbounds || $is_veda_csetboundsexact || $is_veda_oca || $is_veda_cseal ||
+            $is_veda_cunseal || $is_veda_ocinvoke || $is_veda_ospecialrw || $is_veda_ocjalr ||
+            $is_veda_csealentry || $is_veda_ocreturn || $is_veda_candperm ||
+            // custom-3
+            $is_veda_droppriv;
+         $veda_undef_encoding = $veda_op_claimed && !$veda_decoded;
+
+         // ═══════════════════════════════════════════════════════════════════
+         //  R32 -- FAIL-CLOSED CSR ADDRESSES. A second, independent surface the
+         //  encoding catch-all above cannot reach: a CSR access is opcode
+         //  1110011, so $veda_op_claimed is false for it.
+         //
+         //  Sail is fail-closed here by the same construction -- a last wildcard
+         //  `function clause is_CSR_accessible(_) = false` in
+         //  postlude/csr_end.sail -- and veda_regs.sail declares 0x7C0..0x7C8
+         //  only. This layer had NO address-validity term anywhere:
+         //  $csr_rdata's default arm is 64'b0, so an undefined CSR READ ZERO,
+         //  silently. Zero is worse than a no-op, because zero is a value
+         //  software can act on: a handler probing for a feature by reading its
+         //  CSR concludes the feature is present and disabled rather than
+         //  absent. Measured in difftest/probes/p7_csr_space.S.
+         //
+         //  0x7C6/0x7C7/0x7C8 are READ-ONLY in the model -- their
+         //  is_CSR_accessible clauses carry `access_type == CSRRead`, so a write
+         //  is inaccessible and traps before any dispatch, which is why no
+         //  write_CSR clause exists for them. This layer simply had no write
+         //  path for them and ignored the attempt; now it refuses it.
+         // ═══════════════════════════════════════════════════════════════════
+         $csr_addr_known = $csr_is_mtvec || $csr_is_mscratch || $csr_is_mepc || $csr_is_mcause ||
+                           $csr_is_mtval || $csr_is_veda_pcc_base || $csr_is_veda_pcc_length ||
+                           $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
+                           $csr_is_veda_attr || $csr_is_veda_mode || $csr_is_veda_current_region ||
+                           $csr_is_veda_saved_region || $csr_is_veda_trap_status;
+         $csr_is_readonly = $csr_is_veda_current_region || $csr_is_veda_saved_region ||
+                            $csr_is_veda_trap_status;
+         $veda_csr_undef = $is_csr_access && (!$csr_addr_known || ($csr_write_en && $csr_is_readonly));
+
+         $veda_illegal_instr = $veda_undef_encoding ||
+                                $veda_csr_undef ||
+                                $veda_csr_escape_violation ||
                                 $veda_odt_page_out_refusal ||
                                 $veda_odt_page_in_refusal ||
                                 $veda_odt_populate_violation ||
