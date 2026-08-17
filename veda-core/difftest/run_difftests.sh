@@ -34,6 +34,7 @@ p9_tag_destroy.S        AGREE      R33 CLOSED: the capability kill AND the trap
 p12_ambient_boot.S      AGREE      R34: the boot context has AMBIENT authority. Both
 p_reset_crf.S           AGREE      R24 CLOSED: all 16 capability registers agree at reset
 p13_scr_reset.S         AGREE      R37 CLOSED: the three Special Capability Registers
+p14_cow_eligibility.S   AGREE      R38: the COW fault asks WHETHER, never WHO. Both layers
 "
 #                                  FIXTURES inside the architectural reset, at
 #                                  different indices with different contents. c0-c9
