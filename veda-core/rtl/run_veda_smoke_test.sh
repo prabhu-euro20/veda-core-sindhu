@@ -481,6 +481,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r24.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R24 CRF reset / rebind into an untouched register)"
 vvp "$SIM/sim_r24.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r24_crf_reset.hex"
 
+echo "==> R36: Compiling (privilege on a trap)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r36.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r36_priv_trap.sv"
+echo "==> Simulating (R36 privilege model)"
+vvp "$SIM/sim_r36.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r36_priv_trap.hex"
+
 echo "==> R35: Compiling (veda_attr privilege term)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r35.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r35_attr_priv.sv"
 echo "==> Simulating (R35 veda_attr privilege)"
