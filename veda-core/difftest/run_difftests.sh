@@ -36,7 +36,17 @@ p_reset_crf.S           AGREE      R24 CLOSED: all 16 capability registers agree
 p13_scr_reset.S         AGREE      R37 CLOSED: the three Special Capability Registers
 p14_cow_eligibility.S   AGREE      R38: the COW fault asks WHETHER, never WHO. Both layers
 p15_priv_model.S        AGREE      R36/R39 CLOSED: the two layers finally share a privilege
+p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so the previous
 "
+#                                  occupant's cow and owner_domain must not attach to it. Plain
+#                                  Populate carried both on Sail and cleared both on the RTL, and
+#                                  the two Sail populate variants disagreed with each other.
+#                                  Measured before the fix: w0 Sail 0x04 / RTL 0x0C, w1 Sail 1 trap
+#                                  / RTL 0 -- on Sail the freshly minted object was born unwritable,
+#                                  because R38 made cow decide who may write and an object born cow
+#                                  has no principal who held store when it became cow. No probe had
+#                                  ever composed Populate with set.cow, which is how a two-field
+#                                  divergence sat inside a harness reporting 16/16.
 #                                  mechanism, so privileged behaviour can be compared at all
 #                                  -- p13's own header recorded that it could not be. MPP,
 #                                  the U-mode CSR refusal and its cause, MRET-below-Machine,

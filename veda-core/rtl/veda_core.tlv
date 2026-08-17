@@ -4384,6 +4384,16 @@
          // Object_ID afterwards and Binds it gets a read capability -- the
          // 16'hFFF7 mask at :3106/:3121 sees to that -- and may not force a copy.
          //
+         // ONE CLAIM IN THE FIRST DRAFT OF THIS COMMENT WAS OVERSTATED and an
+         // adversarial pass corrected it. It said the 16'hFFF7 mask "did no
+         // enforcement work at all" before this change. The mask was inert only
+         // WHILE the entry was cow: once cow was cleared, the old
+         // (!store && !cow) arm refused a store-stripped capability with 0x13, so
+         // every object that completed a repair was enforced by it. What was
+         // missing was enforcement DURING the cow window -- which is the window in
+         // which the split right has to be decided. Two independent readers
+         // disagreed about this and the wrong one was believed first.
+         //
          // THE INVARIANT ABOVE STILL HOLDS AND IS WHY THIS IS SAFE FOR R21. The
          // trap SET is untouched: (!STORE & !cow) | (cow) and (!STORE) | (cow)
          // cover the identical states, so the violation OR-expressions that feed
