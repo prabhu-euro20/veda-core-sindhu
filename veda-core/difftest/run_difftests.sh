@@ -27,6 +27,7 @@ p4_cow.S                AGREE      copy-on-write attenuation and the COW fault
 p5_reserved.S           AGREE      R30 CLOSED: three classes of unallocated encoding, all
 p6_overbroad.S          AGREE      R30 CLOSED: the four over-broad decoders are narrowed
 p7_csr_space.S          AGREE      R32 CLOSED: undefined CSR addresses and read-only
+p8_reserved_bits.S      AGREE      R30(b) CLOSED: reserved-zero fields inside allocated
 p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed TEST
 "
 #                                  FIXTURES inside the architectural reset, at
@@ -83,6 +84,21 @@ p_reset_crf.S           DIVERGE    R24 open half: c10-c14 only. Both layers seed
 # the probe still reported AGREE, because BOTH layers did the same no-op." That
 # encoding now traps on both, so the probe is a real derivation test again.
 # DESIGN_07 R30 and R32.
+#
+# p8_reserved_bits covers the layer BELOW opcode/funct3/funct7 granularity. Every
+# capability operand is a 4-bit field inside a 5-bit RISC-V register slot,
+# because the capability register file has sixteen entries -- so the spare bit is
+# reserved, and it is the extension budget. Ignored, `cseal c2, c1, c17` uses c1
+# as the sealing AUTHORITY here while a 32-register successor would use c17:
+# register-index aliasing, which in a capability machine means the wrong
+# authority. Five classes measured separately -- bit19 above vcap rs1, bit11
+# above vcap rd, bit24 above vcap rs2, a nonzero rd on an instruction with no
+# destination, a nonzero rs2 on a slot pinned to zero -- with a control proving
+# the same instructions at their legal encodings still do not trap.
+#
+# The seven ODT instructions have ALL-GPR operands and therefore NO reserved
+# bits. That distinction was derived by parsing every encdec clause's field
+# roles, not assumed, and applying the terms uniformly would have broken them.
 #
 # p7_csr_space is a SEPARATE surface and the encoding catch-all cannot reach it.
 # Sail is fail-closed for CSR addresses by the same construction it uses for

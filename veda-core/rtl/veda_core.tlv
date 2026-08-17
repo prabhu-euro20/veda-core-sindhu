@@ -1358,9 +1358,50 @@
          // Narrowing the decode itself rather than adding a parallel gate is
          // deliberate: every consumer downstream inherits it, so there is no
          // second place to forget.
-         $is_veda_bind  = $op_is_custom0 && ($funct3 == 3'b101) && ($instr[31:22] == 10'b0);
-         $is_veda_ocl   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000000);
-         $is_veda_ocs   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000001);
+         // ═══════════════════════════════════════════════════════════════════
+         //  R30(b) -- RESERVED-ZERO FIELDS. The R30 catch-all is
+         //  opcode/funct3/funct7/selector-granular. Sail pins bits BELOW that
+         //  granularity, and a 1 in any of them means no encdec clause matches,
+         //  so the wildcard ILLEGAL catches it. This layer never looked.
+         //
+         //  WHY THESE BITS EXIST, which is the reason to enforce them rather
+         //  than a reason to copy Sail. The capability register file has
+         //  SIXTEEN entries, so every capability operand is a 4-bit field with
+         //  a hardwired zero above it inside a 5-bit RISC-V register slot. That
+         //  spare bit is the extension budget. Ignore it and `cseal c2, c1, c17`
+         //  silently uses c1 as the sealing AUTHORITY here while a 32-register
+         //  successor would use c17 -- register-index ALIASING, and in a
+         //  capability machine aliasing a register means using the wrong
+         //  authority. Enforcing it now means no binary can ever come to depend
+         //  on the bit being ignored.
+         //
+         //  DERIVED, NOT GUESSED: every encdec clause in the four Veda opcodes
+         //  was parsed and its field roles extracted -- which operands are
+         //  4-bit vcap, which are plain 5-bit GPRs, and which slots are pinned
+         //  to zero outright. The seven ODT instructions came out with ALL-GPR
+         //  operands and therefore NO reserved bits, which is exactly the
+         //  distinction that would have broken them had these terms been
+         //  applied uniformly.
+         //
+         //  NO NEW TRAP SOURCE IS NEEDED. Narrowing the decode makes
+         //  $veda_decoded false, so R30's $veda_undef_encoding fires and the
+         //  existing umbrella supplies mcause 0x02 and mtval. The infrastructure
+         //  from the previous increment does the work.
+         //
+         //  Blast radius measured before the first edit: all 203 test sources in
+         //  both corpora plus the probes were scanned against this same derived
+         //  table, and NOT ONE sets a reserved bit. The only sites are
+         //  difftest/probes/p8_reserved_bits.S, which sets them deliberately.
+         // ═══════════════════════════════════════════════════════════════════
+         $veda_resv_rs1_vcap = ($instr[19] == 1'b0);      // 4-bit vcap in a 5-bit rs1 slot
+         $veda_resv_rd_vcap  = ($instr[11] == 1'b0);      // 4-bit vcap in a 5-bit rd slot
+         $veda_resv_rs2_vcap = ($instr[24] == 1'b0);      // 4-bit vcap in a 5-bit rs2 slot
+         $veda_resv_rs2_zero = ($instr[24:20] == 5'b0);   // slot consumed by nothing
+         $veda_resv_rd_zero  = ($instr[11:7] == 5'b0);    // instruction has no destination
+
+         $is_veda_bind  = $op_is_custom0 && ($funct3 == 3'b101) && ($instr[31:22] == 10'b0) && $veda_resv_rd_vcap;
+         $is_veda_ocl   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000000) && $veda_resv_rs1_vcap;
+         $is_veda_ocs   = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000001) && $veda_resv_rs1_vcap;
          // OCL.C/OCS.C -- RTL Milestone 7 (VEDA_CORE_SPEC.md's own
          // "OCL.C/OCS.C semantics" writeup). Same funct7 as OCL/OCS
          // above, differentiated by funct3=100 (the width table's own
@@ -1370,8 +1411,8 @@
          // matching real CHERI's own [C]LC/[C]SC precedent (already
          // decided and cited in the spec): a 128-bit capability plus Tag
          // has no meaningful GPR representation.
-         $is_veda_ocl_c = $op_is_custom0 && ($funct3 == 3'b100) && ($funct7 == 7'b0000000);
-         $is_veda_ocs_c = $op_is_custom0 && ($funct3 == 3'b100) && ($funct7 == 7'b0000001);
+         $is_veda_ocl_c = $op_is_custom0 && ($funct3 == 3'b100) && ($funct7 == 7'b0000000) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
+         $is_veda_ocs_c = $op_is_custom0 && ($funct3 == 3'b100) && ($funct7 == 7'b0000001) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
 
          // Bind: mode = instr[21:20] (imm[1:0]), rs1 = instr[19:15]
          // (already extracted as $rs1, an ordinary GPR holding Object_ID
@@ -1564,14 +1605,14 @@
          //  order already used when this same subset was built in Sail.
          // ─────────────────────────────────────────────────────────
          $op_is_custom2 = ($opcode == 7'b1011011);
-         $is_veda_oca   = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001010);
+         $is_veda_oca   = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001010) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
          // RTL mirror of DESIGN_01/Sail CAndPerm: rights attenuation. funct7
          // 0010111, the next free Custom-2/funct3=001 slot (OCA 0001010 ..
          // OCRETURN 0010110). cd = cs1 with Perms &= rs2, otherwise the OCA
          // manipulate idiom exactly: all fields carry from cs1, Tag cleared
          // on an untagged or sealed source. Monotonic by construction (AND
          // only clears), so no bounds term.
-         $is_veda_candperm = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010111);
+         $is_veda_candperm = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010111) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE RTL MILESTONE 3 DECODE — the Veda-Cap query family
@@ -1582,13 +1623,13 @@
          //  applied once in Sail): capability *metadata* is always
          //  inspectable, even on a sealed or untagged capability.
          // ─────────────────────────────────────────────────────────
-         $is_veda_cgetbase   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000000);
-         $is_veda_cgetlen    = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000001);
-         $is_veda_cgetperm   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000010);
-         $is_veda_cgettag    = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000011);
-         $is_veda_cgettype   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000100);
-         $is_veda_cgetaddr   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101);
-         $is_veda_cgetoffset = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000110);
+         $is_veda_cgetbase   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000000) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgetlen    = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000001) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgetperm   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000010) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgettag    = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000011) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgettype   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000100) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgetaddr   = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000101) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
+         $is_veda_cgetoffset = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000110) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
          // RTL-19: THE FAULT-IDENTIFICATION CHANNEL. A trap reports
          // {cap_idx, cause} and no Object_ID, and this family could read every
          // field of a capability EXCEPT its name -- so a handler was told which
@@ -1608,7 +1649,7 @@
          // handlers are safe by construction (a capability that reached a fault
          // already passed the tag and generation checks); a handler that stores
          // the name and uses it later is not.
-         $is_veda_cgetobjectid = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000111);
+         $is_veda_cgetobjectid = $op_is_custom2 && ($funct3 == 3'b000) && ($funct7 == 7'b0000111) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero;
          $is_veda_capquery = $is_veda_cgetbase || $is_veda_cgetlen || $is_veda_cgetperm ||
                               $is_veda_cgettag || $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset ||
                               // omitting this OR-term would decode the instruction and
@@ -1625,8 +1666,8 @@
          // 16-bit value -- every value is exactly representable). Both
          // decode separately (their real, distinct funct7 slots are kept,
          // matching the spec) but share one identical execute path below.
-         $is_veda_csetbounds      = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001000);
-         $is_veda_csetboundsexact = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001001);
+         $is_veda_csetbounds      = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001000) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
+         $is_veda_csetboundsexact = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0001001) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
          $is_veda_csetbounds_either = $is_veda_csetbounds || $is_veda_csetboundsexact;
 
          // ─────────────────────────────────────────────────────────
@@ -1639,8 +1680,8 @@
          //  ALSO a capability register (the "type-authority" operand),
          //  not a GPR -- a genuinely new operand pattern, decoded below.
          // ─────────────────────────────────────────────────────────
-         $is_veda_cseal   = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010000);
-         $is_veda_cunseal = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010001);
+         $is_veda_cseal   = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010000) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap && $veda_resv_rs2_vcap;
+         $is_veda_cunseal = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010001) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap && $veda_resv_rs2_vcap;
          // rs2 as a capability register: instr[23:20] (4 bits) -- the
          // same relative position/width as $veda_ocl_ocs_rs1_cap's own
          // instr[18:15] rs1-capability field, just shifted to the rs2
@@ -1757,10 +1798,10 @@
                                  ($veda_atomic_op == 5'b01000) || ($veda_atomic_op == 5'b10000) ||
                                  ($veda_atomic_op == 5'b10100) || ($veda_atomic_op == 5'b11000) ||
                                  ($veda_atomic_op == 5'b11100);
-         $is_veda_atomic  = $op_is_custom1 && ($funct3 == 3'b011) && $veda_atomic_op_known;
+         $is_veda_atomic  = $op_is_custom1 && ($funct3 == 3'b011) && $veda_atomic_op_known && $veda_resv_rs1_vcap;
 
-         $is_veda_nmc_add_w = $op_is_custom0 && ($funct3 == 3'b010) && ($funct7 == 7'b0000010);
-         $is_veda_nmc_add_d = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000010);
+         $is_veda_nmc_add_w = $op_is_custom0 && ($funct3 == 3'b010) && ($funct7 == 7'b0000010) && $veda_resv_rs1_vcap;
+         $is_veda_nmc_add_d = $op_is_custom0 && ($funct3 == 3'b011) && ($funct7 == 7'b0000010) && $veda_resv_rs1_vcap;
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE: ODT lookup for Object-Bind, by Object_ID read
@@ -3426,7 +3467,7 @@
          //  other Custom-2 instruction already shares -- no new field
          //  extraction needed.
          // ─────────────────────────────────────────────────────────
-         $is_veda_csealentry = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010101);
+         $is_veda_csealentry = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010101) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap && $veda_resv_rs2_zero;
          // Soft-fail only, no hard trap -- mirrors CSeal's own $veda_cseal_ok
          // pattern, minus any cs2/authorization term (CSealEntry takes
          // none): an already-untagged or already-sealed cs1 can't
@@ -3456,7 +3497,7 @@
          //  below, exactly matching Sail's own per-check
          //  veda_trap(rs1 or rs2, ...) choice.
          // ─────────────────────────────────────────────────────────
-         $is_veda_ocinvoke = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010010);
+         $is_veda_ocinvoke = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010010) && $veda_resv_rs1_vcap && $veda_resv_rs2_vcap && $veda_resv_rd_zero;
          // RTL-5 (R10): the region gate joins this OR as the LAST term, so
          // a capability that fails any earlier check still reports its own
          // real reason -- mirroring Sail's placement after all nine checks
@@ -3598,7 +3639,7 @@
          //  Milestone 6's existing CSeal/CUnseal type-authority model
          //  rather than inventing a second, parallel sealing mechanism.
          // ─────────────────────────────────────────────────────────
-         $is_veda_ocjalr = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010100);
+         $is_veda_ocjalr = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010100) && $veda_resv_rs1_vcap && $veda_resv_rs2_vcap && $veda_resv_rd_zero;
          // RTL-7 (R11): OCJALR jumps to cs1.Base exactly as the two real
          // crossings do, so it needs the identical revalidation even though
          // it is intra-domain by design and carries no region check.
@@ -3690,7 +3731,7 @@
          //  existing default fallback is already $veda_ocl_ocs_rs1_cap,
          //  exactly the single operand OCRETURN has.
          // ─────────────────────────────────────────────────────────
-         $is_veda_ocreturn = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010110);
+         $is_veda_ocreturn = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010110) && $veda_resv_rs1_vcap && $veda_resv_rs2_zero && $veda_resv_rd_zero;
          // RTL-5 (R10): the return half, and the sharper half of the escape
          // closure -- the original hole was precisely that OCReturn restored
          // no region, so a caller resumed holding the callee's domain as
@@ -3756,7 +3797,7 @@
          // than needing the gate rewritten separately.
          $veda_ospecialrw_sel_known = ($instr[24:20] == 5'b00000) || ($instr[24:20] == 5'b00001) ||
                                       ($instr[24:20] == 5'b00010);
-         $is_veda_ospecialrw = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010011) && $veda_ospecialrw_sel_known;
+         $is_veda_ospecialrw = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010011) && $veda_ospecialrw_sel_known && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
          $veda_ospecialrw_violation = $is_veda_ospecialrw && !$priv;
 
          // RTL mirror of minimal OS kernel Milestone A
