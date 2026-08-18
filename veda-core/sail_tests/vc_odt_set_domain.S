@@ -40,7 +40,13 @@ _start:
 
     # ---- phase 2: narrow the object, then reuse the SAME capability
     li   x1, 1
-    li   x4, 5                     # domain 5
+    # R62 (D6): this read `li x4, 5` and set.domain now REFUSES it -- region 5
+    # has rt_valid = false, it has never been configured, so domain 5 is not a
+    # principal but a principal that DOES NOT EXIST YET. FOUR tests across the
+    # two layers named such a domain and not one named a real principal, which
+    # is exactly why the missing check was invisible. Region 1 is real,
+    # configured and resident; nothing else about this test changes.
+    li   x4, 1                     # domain 1 -- a REAL, configured region
     .insn r 0x0b, 0x1, 0x06, x5, x1, x4   # veda.odt.set.domain
     bne  x20, x0, fail             # the write itself must not trap
 

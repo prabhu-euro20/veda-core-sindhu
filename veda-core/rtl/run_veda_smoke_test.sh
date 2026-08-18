@@ -664,6 +664,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_d5.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda
 echo "==> Simulating (D5 CRBR shadow release)"
 vvp "$SIM/sim_d5.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_d5_crbr_shadow_leak.hex" | tee -a "$RUNLOG"
 
+echo "==> R62: Compiling (set.domain must name a principal that exists)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r62.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r62_domain_nameable.sv"
+echo "==> Simulating (R62 domain nameable)"
+vvp "$SIM/sim_r62.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r62_domain_nameable.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

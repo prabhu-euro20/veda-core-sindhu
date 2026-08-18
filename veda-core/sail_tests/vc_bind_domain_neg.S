@@ -12,9 +12,9 @@
 # pass. That is exactly the shape of hole this session has found three times:
 # a mechanism present, believed, and never exercised on the path that matters.
 #
-#   1. narrow object 2 to domain 7, from boot
+#   1. narrow object 2 to domain 1, from boot
 #   2. enter a compartment whose code object lives in region 0
-#   3. from inside, bind object 2 -- domain 0 is not domain 7, so it must TRAP
+#   3. from inside, bind object 2 -- domain 0 is not domain 1, so it must TRAP
 #      with cause 0x0B, and the destination capability must come back untagged
 #   4. from the same place, bind an object left OPEN -- must still succeed, or
 #      the gate is simply refusing everything and step 3 proves nothing
@@ -23,10 +23,20 @@ _start:
     csrw mtvec, t0
     li   x20, 0
 
-    # ---- narrow object 2 to domain 7, while still in no compartment
+    # ---- narrow object 2 to domain 1, while still in no compartment
+    #
+    # R62 (D6): this read `li x4, 7` and set.domain now REFUSES it. Region 7 has
+    # rt_valid = false -- it has never been configured -- so domain 7 is not a
+    # principal, it is a principal that does not exist. That this file, the
+    # corpus's canonical example of using the instruction, named a nonexistent
+    # domain is what made D6 sharp rather than theoretical.
+    #
+    # Domain 1 is a real, configured, resident region, so the test now asserts
+    # what it always meant to: the executing domain (0) is not the object's
+    # domain (1), therefore the bind traps. Nothing else about the test changes.
     li   x1, 2
-    li   x4, 7
-    .insn r 0x0b, 0x1, 0x06, x5, x1, x4   # veda.odt.set.domain 2 -> 7
+    li   x4, 1
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x4   # veda.odt.set.domain 2 -> 1
     bne  x20, x0, fail
 
     # ---- build a region-0 compartment: code, handoff data, type authority

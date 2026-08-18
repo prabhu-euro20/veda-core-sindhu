@@ -25,8 +25,15 @@ _start:
 
     // ---- narrow object 2 to domain 7, while still in no compartment
     li   x1, 2
-    li   x4, 7
-    .insn r 0x0b, 0x1, 0x06, x5, x1, x4   # veda.odt.set.domain 2 -> 7
+    // R62 (D6): this named domain 7, and set.domain now REFUSES it -- region
+    // 7 has rt_valid = 0, it has never been configured, so it is not a
+    // principal but a principal that DOES NOT EXIST YET. Every use of
+    // set.domain in the whole corpus, on both layers, named such a domain --
+    // three tests, three nonexistent principals -- which is exactly why the
+    // missing check was invisible. Region 1 is real, configured and resident,
+    // so the test now asserts what it always meant.
+    li   x4, 1
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x4   # veda.odt.set.domain 2 -> 1
     bne  x20, x0, fail
 
     // ---- build a region-0 compartment: code, handoff data, type authority

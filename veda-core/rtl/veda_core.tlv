@@ -2732,9 +2732,24 @@
          // slots someone else has yet to populate.
          // R47: a policy write is authority over the descriptor, so it needs
          // authority over the memory that descriptor names.
+         // R62 (D6): and the DOMAIN this write names must be a principal that
+         // EXISTS. The value arrived straight from rs2[19:0] with no check of
+         // any kind, so an object could be stamped for an unconfigured region
+         // -- a policy that takes effect when someone else is GIVEN that
+         // region, which is authority outliving its author. Same argument as
+         // the $veda_odt_valid term directly above, applied to the other half
+         // of the instruction. VEDA_DOMAIN_ANY is exempt: it is the ABSENCE of
+         // a restriction, not a principal, and it is what Populate and Destroy
+         // reset the field to. Reads rt_valid, NOT rt_resident -- region 3 is
+         // seeded {rt_valid=0, rt_resident=1} exactly so a check on the wrong
+         // bit cannot pass.
+         $veda_setdom_new[19:0]     = $rs2_data[19:0];
+         $veda_setdom_in_window     = ($veda_setdom_new < {12'b0, RT_ENTRIES[7:0]});
+         $veda_domain_not_nameable  = ($veda_setdom_new != VEDA_DOMAIN_ANY) &&
+                                       !($veda_setdom_in_window && rt_valid[$veda_setdom_new[2:0]]);
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
                                            (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
-                                            $veda_oda_denies_old);
+                                            $veda_oda_denies_old || $veda_domain_not_nameable);
          $veda_odt_set_cow_violation = $is_veda_odt_set_cow &&
                                         (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
                                          $veda_oda_denies_old);

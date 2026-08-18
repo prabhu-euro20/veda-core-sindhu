@@ -31,8 +31,15 @@ _start:
 
     // ═══ phase 2: narrow it, then REUSE THE SAME CAPABILITY ═══
     li   x1, 1
-    li   x4, 5
-    .insn r 0x0b, 0x1, 0x06, x5, x1, x4    // veda.odt.set.domain 1 -> 5
+    // R62 (D6): this named domain 5, and set.domain now REFUSES it -- region
+    // 5 has rt_valid = 0, it has never been configured, so it is not a
+    // principal but a principal that DOES NOT EXIST YET. Every use of
+    // set.domain in the whole corpus, on both layers, named such a domain --
+    // three tests, three nonexistent principals -- which is exactly why the
+    // missing check was invisible. Region 1 is real, configured and resident,
+    // so the test now asserts what it always meant.
+    li   x4, 1
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x4    // veda.odt.set.domain 1 -> 1
     bne  x20, x0, fail                     // the write must not trap
     li   x10, 0
     .insn r 0x0b, 0x3, 0x00, x10, x0, x2   // ocl.d through the OLD c0

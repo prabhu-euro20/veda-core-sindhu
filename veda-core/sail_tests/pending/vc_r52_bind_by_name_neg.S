@@ -3,6 +3,11 @@
 .global _start
 _start:
     # ═══════════════════════════════════════════════════════════════════════
+    # FILED AS: DESIGN_07 R52, second half -- red on purpose, see
+    # sail_tests/pending/README.md. The header below is the R48 scaffold this
+    # file was grown from and is kept because PART A still exercises it; the
+    # assertions this file OWES are the R52 ones at the bottom.
+    #
     # R48 -- DOES A CALLEE COMPARTMENT INHERIT THE CALLER'S ODA?
     #
     # OCInvoke narrows PCC to the callee's bounds, installs a fresh IDC,
@@ -33,7 +38,7 @@ _start:
     # repopulate a slot whose current contents lie outside its window. Before
     # R47 that same instruction would have SILENTLY OVERWRITTEN a fixture.
     # Third instance of this project's Object_ID-collision class; the fixture
-    # now lives at 120..106, which nothing seeds.
+    # now lives at 120..124, which nothing seeds.
     # ═══════════════════════════════════════════════════════════════════════
     #
     # ═══ R52 -- A NAME IS STILL FULL AUTHORITY, AND THAT MAKES R50's FIX
@@ -199,10 +204,33 @@ trap_handler:
 
 .balign 4
 verdict:
-    # PART C is the control that decides what the finding IS. It lives in the
-    # sibling file vc_r52_bind_domain_default_ctl.S: with veda.odt.set.domain
-    # giving object 121 a real owner_domain, the identical PART B takes 2 traps
-    # and reads 0. The gate works. The default is what is open.
+    # PART C is the control that decides what the finding IS: with a real
+    # owner_domain on the object, the identical PART B must be REFUSED -- so
+    # what is open here is the DEFAULT, not the gate.
+    #
+    # An earlier revision of this comment cited a sibling file
+    # vc_r52_bind_domain_default_ctl.S and reported its result ("takes 2 traps
+    # and reads 0. The gate works") in the past tense. THAT FILE NEVER EXISTED
+    # AND THAT MEASUREMENT WAS NEVER MADE. Corrected under DESIGN_07 R61: a
+    # control asserted as a result is the exact failure this register has now
+    # caught nine times, and writing it about a control is worse than writing
+    # it about a finding.
+    #
+    # The control is real and it is already in the suite, twice over, both
+    # green and both landed:
+    #   sail_tests/vc_bind_domain_neg.S     an EXPLICIT veda.odt.set.domain
+    #                                       narrows object 2 to domain 7; a bind
+    #                                       from inside a region-0 compartment
+    #                                       traps 0x0B and the destination comes
+    #                                       back untagged
+    #   sail_tests/vc_r52_creation_domain.S the CREATION-TIME default: a
+    #                                       compartment's own object binds, a
+    #                                       foreign compartment's is refused in
+    #                                       exactly one trap, and the ambient
+    #                                       object still binds (R17's path)
+    # So veda_bind_domain_ok is enforced and is not bypassable. What this file
+    # still waits on is the re-graining of its SUBJECT from region to object,
+    # which is what sail_tests/pending/README.md routes it to.
     li   t4, 0x600D
     bne  s5, t4, check_fail                # CONTROL 1: the caller's own access worked
     li   t4, 0x1234
