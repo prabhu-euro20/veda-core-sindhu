@@ -154,14 +154,31 @@ https://github.com/user-attachments/assets/a454737e-e342-45c1-81d3-4bb3c8d80044
   not yet part of the permanent, committed regression corpus.
 
 ## Verification status
-(as of Milestone 25, 2026-08-09 -- see `veda-core/rtl/MILESTONE_24_RESULTS.md` for Milestone 24's
-exact commands/outputs, and `veda-core/rtl/MILESTONE_25_RESULTS.md` for the full-GPR-context-save
-work that added the one new Sail test below)
-- Sail formal model: 59/59 self‑checking tests.
-- RTL milestone smoke-test regression: 49/49 (46 pre-existing + 3 from Milestone 24), zero
-  regressions; per-milestone results live in `veda-core/rtl/`.
-- RISC‑V ACT4 RV64I conformance: 51/51, zero regressions (run
-  directly against `veda_core.tlv`; see `veda-core/rtl/ACT4_CONFORMANCE_RESULTS.md`).
+**(as of 2026-08-18, after the R36..R43 hardening pass -- see
+`veda-core/EVIDENCE_INDEX.md`'s dated addendum for every finding traced to its test, and
+`../veda-core-linux/design/DESIGN_07_ROBUSTNESS_AND_SECURITY_HARDENING.md` for the findings
+register, which runs R1..R43 with no gaps.)**
+
+**One command reproduces all four suites:**
+
+    veda-core/verification.sh
+
+- **Sail formal model: 102/102** self-checking tests.
+- **RTL milestone smoke-test regression: 90/90**, zero regressions; per-milestone results live in
+  `veda-core/rtl/`.
+- **RISC-V ACT4 RV64I conformance: 51/51**, zero regressions (run directly against
+  `veda_core.tlv`; see `veda-core/rtl/ACT4_CONFORMANCE_RESULTS.md`).
+- **Cross-layer differential: 20/20 as expected.** Twenty probes run the same program on the Sail
+  model and the RTL and compare result signatures **word for word**. This suite was missing from
+  this list entirely, and it is the one that finds what neither layer can find alone -- an
+  arithmetic wrap the model's arbitrary-precision integers cannot express, a refusal that traps and
+  lets the write land anyway, a permission that is attenuable and reported attenuated and governs
+  nothing. Expected verdicts are recorded per probe in `veda-core/difftest/run_difftests.sh`, so a
+  probe that is KNOWN to diverge is listed as such rather than hidden behind an all-must-agree
+  suite -- and a probe that stops diverging fails until someone updates the record.
+
+*(Previous entry, kept for comparison: at Milestone 25 on 2026-08-09 this read Sail 59/59 and RTL
+49/49, with no differential line at all.)*
 
 ## Where to find the authoritative docs and evidence
 - Technical brief: `veda-core/TECHNICAL_BRIEF.md`
@@ -178,7 +195,11 @@ work that added the one new Sail test below)
 - The RTL and Sail models are in `veda-core/rtl/` and `toolchain/sail-riscv/`.
 - Primary reproduction scripts live under `veda-core/` and
    `veda-core/rtl/` (for example `veda-core/verification.sh`,
-   `veda-core/rtl/run_act4_tests.sh`).
+   `veda-core/rtl/run_act4_tests.sh`, `veda-core/difftest/run_difftests.sh`).
+   **`verification.sh` and `run_security_trap.sh` both used to hardwire their root
+   to a frozen sibling checkout**, so they built into another tree and measured
+   whatever vintage was sitting there -- the security demo was transpiling an RTL
+   copy missing every recent increment. Both now resolve their own location.
 - Results reported above come from Icarus Verilog simulations and the
    Sail executable model; no FPGA/ASIC is claimed.
 
