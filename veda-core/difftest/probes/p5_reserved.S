@@ -28,13 +28,16 @@ _start:
 
     .insn i 0x0b, 0x5, x2, x1, 3          # BIND MODE 3 -- specified Illegal_Instruction
     sd   x29, 0(x31)                       # expect 1
+    sd   x27, 40(x31)                      # A-3/R44: and its CAUSE -- 0x02 on both
 
     li   x6, 8
     .insn r 0x0b, 0x0, 0x0a, x7, x1, x6   # custom-0 f3=000 f7=0001010 -- unallocated
     sd   x29, 8(x31)                       # expect 2
+    sd   x27, 48(x31)                      # its cause -- 0x02
 
     .insn r 0x5b, 0x7, 0x00, x8, x1, x0   # custom-2 f3=111 -- unallocated funct3
     sd   x29, 16(x31)                      # expect 3
+    sd   x27, 56(x31)                      # its cause -- 0x02
 
     .insn r 0x5b, 0x0, 0x03, x9, x1, x0   # cgettag c1 -- LEGAL, must NOT trap
     sd   x29, 24(x31)                      # expect 3 still
@@ -47,6 +50,12 @@ _start:
 .balign 4
 trap_handler:
     addi x29, x29, 1
+    # A-3/R44: THIS HANDLER USED TO READ ONLY mepc. It counted traps and never
+    # looked at WHY, so three probes that exist to prove "unallocated encodings are
+    # refused" could not tell an Illegal_Instruction from a REGION_FAULT. Mode 0b11
+    # really did report a different cause on the two layers, for years, and this
+    # probe reported AGREE throughout. Counting a refusal is not checking it.
+    csrr x27, mcause
     csrr x28, mepc
     addi x28, x28, 4
     csrw mepc, x28
@@ -61,6 +70,6 @@ fromhost: .dword 0
 .align 8
 .global begin_signature
 begin_signature:
-    .fill 8, 8, 0
+    .fill 16, 8, 0
 .global end_signature
 end_signature:

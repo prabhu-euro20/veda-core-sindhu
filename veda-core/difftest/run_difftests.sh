@@ -39,6 +39,7 @@ p15_priv_model.S        AGREE      R36/R39 CLOSED: the two layers finally share 
 p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so the previous
 p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STORE_CAPABILITY are
 p18_cow_not_pageable.S  AGREE      R38(b) CLOSED: page.out refuses on a copy-on-write object
+p19_bind_reserved_mode.S AGREE     R44 CLOSED: bind mode 0b11 refused at DECODE on both layers
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -222,3 +223,21 @@ for r in "${results[@]}"; do echo "$r"; done
 echo "---"
 echo "$pass/$((pass+fail)) as expected"
 [ "$fail" -eq 0 ] || exit 1
+
+# p19_bind_reserved_mode -- R44. veda.bind mode 0b11 is VEDA_BIND_RESERVED, an
+# encoding the architecture never allocated. On Sail it used to reach its
+# Illegal_Instruction arm only AFTER three state-dependent traps had had their
+# chance -- region residency, the per-object domain gate, and object residency --
+# so the refusal CAUSE for an unallocated encoding was a function of ODT and
+# region state the instruction was never entitled to consult. Unprivileged code
+# could issue reserved-mode binds and read the cause as an ODT ORACLE. The RTL
+# always refused at decode.
+#
+# MEASURED BEFORE THE FIX: w0 mcause Sail 0x18 vs RTL 0x02; w1 mtval Sail 0x49,
+# which is (c2 << 5) | 0x09 REGION_FAULT, vs the RTL's raw instruction word.
+# AFTER: 0x02 and the raw word on both.
+#
+# w2 is the control -- Object_ID 1, region 0, resident -- and it is exactly the
+# only case p5_reserved.S ever exercised. That probe also never read mcause at
+# all, so it reported AGREE throughout while the layers disagreed. Both blind
+# spots are closed: p5 now records the cause of each of its three refusals.
