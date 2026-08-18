@@ -30,6 +30,28 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 cd "$ROOT"
 
+# ═══ R54 -- TWO RUNS AT ONCE CORRUPT EACH OTHER ═══════════════════════════
+# The four suites write into fixed paths -- rtl/sim/*.vvp, *.hex, and the
+# difftest artifact directory -- with no interlock, so a second concurrent run
+# is not a SLOW run, it is a WRONG one, in either direction. Measured: two runs
+# started by mistake, one reporting "RTL 51/51, diff 5/24, NOT VERIFIED" while
+# the other reported the true 98/98 and 24/24 and passed.
+#
+# R46's exit-code discipline is what refused to certify the corrupted one, and
+# that is the fix working. But VISIBLE is weaker than IMPOSSIBLE. A measurement
+# taken while another process mutates the same tree is not a measurement --
+# this project's own rule, applied from the writer's side.
+LOCK="$ROOT/veda-core/.verification.lock"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  echo "FATAL: another verification run holds $LOCK." >&2
+  echo "  The four suites share rtl/sim/ and the difftest artifacts, so two runs" >&2
+  echo "  overwrite each other's .vvp/.hex/.sig files and BOTH results become" >&2
+  echo "  fiction. Wait for it to finish, or kill it, then re-run." >&2
+  ps -eo pid,etime,cmd | grep '[v]erification.sh' >&2 || true
+  exit 7
+fi
+
 FAILED=()
 note_fail() { FAILED+=("$1"); }
 

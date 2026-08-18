@@ -146,7 +146,7 @@ four labels.
 
 ---
 
-## ADDENDUM -- 2026-08-18 hardening pass (R36 through R51)
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R54)
 
 **Appended rather than merged into the 2026-07-28 index above, which is a snapshot
 of its own pass and stays intact.** Same legend. Every count here was produced by
@@ -169,7 +169,7 @@ the run recorded at the bottom of this section, not recalled.
 three repositories and in every commit message, then differencing against the
 `###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
 them were shipped, verified hardware fixes**, two of exploitable class. All four
-are now entered. The register runs **R1..R51 with no gaps.**
+are now entered. The register runs **R1..R54 with no gaps.**
 
 | **R44** | `veda.bind` mode `0b11` (`VEDA_BIND_RESERVED`) is refused at DECODE on both layers. It used to reach Sail's `Illegal_Instruction` arm only after three ODT-state-dependent traps had had their chance, so the refusal CAUSE for an unallocated encoding was an ODT oracle | **[FILE, COMMITTED]** `difftest/probes/p19_bind_reserved_mode.S` |
 | **R45** | the executing-object pin compares MEMORY, not names. Two Object_IDs may still legally name one range -- SLAB-CARVE mints children inside a parent by construction -- but an alias is no longer a handle for evicting the code a compartment is running | **[FILE, COMMITTED]** `sail_tests/vc_r45_odt_alias_neg.S` |
@@ -179,6 +179,10 @@ are now entered. The register runs **R1..R51 with no gaps.**
 | **R49** | seven programs were assembled by the runner and never simulated; one of them (`m16_neg`) had been asserting the opposite of the architecture since generation widened 8 -> 24 bits. Re-aimed onto the seeded near-saturated fixture, plus a coverage guard and a real exit code on the runner | **[FILE, COMMITTED]** `rtl/run_veda_smoke_test.sh`, `rtl/sim/veda_smoke_m16_neg.S` |
 | **R50** | **[OPEN, MEASURED]** the capability register file crosses a compartment boundary intact and the dereference checker has ZERO domain terms. A callee read `0xC0FFEE` out of the caller's object through a register it was never handed, zero traps. Larger than R48 | **[MEASURED, NOT FIXED]** DESIGN_07 R50 |
 | **R51** | **[OPEN, MEASURED]** the region table has no software write path at all, so OCInvoke cannot succeed without test fixtures -- the compartment crossing has never been differentially tested | **[FILE, COMMITTED]** `difftest/blocked/p21_oda_crossing.S`, plus a probe-coverage guard in `run_difftests.sh` |
+| **R50 inc 1** | **OCLEAR** -- there was NO instruction that reliably zeroed a capability register's VALUE, so the switcher-clears-what-it-does-not-pass answer was a duty this architecture had assigned and shipped no tool for. Clears the VALUE (the query family is un-gated, so a tag-only clear still answers `CGetBase` with the raw physical Base) and keeps `otype = 0xFFFF` (an all-zeros clear reads as SEALED and Rebind would refuse forever while every tag assertion stayed green) | **[FILE, COMMITTED]** `sail_tests/vc_r50_oclear.S`, `difftest/probes/p23_oclear.S` |
+| **R52** | **[OPEN, MEASURED]** a callee needs only the NAME: given the integer alone, with the caller having untagged its own register first, it re-Bound the caller's private object and read it -- zero traps. Control: with `owner_domain` actually set, 2 traps and nothing read. The gate is sound; its DEFAULT is open, and that makes clearing registers at the crossing theatre | **[MEASURED, NOT FIXED]** DESIGN_07 R52 |
+| **R53** | CSetBounds was computed at the PRE-WIDENING widths on the RTL -- Base 32, Length 16 -- and the window check validated the TRUNCATED request. **Measured**: a request of `0x10000` gave `0x00010000` on Sail and `0x00000000` on the RTL, with both controls agreeing. Now 56/40, and the check is 65 bits wide because at 64 a huge request wraps and passes | **[FILE, COMMITTED]** `difftest/probes/p22_csetbounds_width.S` |
+| **R54** | two `verification.sh` runs at once corrupt each other -- they share `rtl/sim/` and the difftest artifacts. **Measured on myself**: one run reported `51/51` RTL and `5/24` differential while the other reported the true `98/98` and `24/24`. R46's exit-code discipline is what refused to certify it. Now interlocked, so a second run is refused rather than merely visible | **[FILE, COMMITTED]** `verification.sh` |
 
 ### Open, honestly
 
@@ -217,9 +221,9 @@ and `0 programs run` reads as a clean line rather than an outage.
 Current, through the fixed entry point, in a shell with no conda active:
 
 ```
-  Sail self-check   : 104/104 passed
-  RTL milestones    :  90/90  passed
+  Sail self-check   : 106/106 passed
+  RTL milestones    :  98/98  passed
   ACT4 conformance  :  51/51  passed
-  Cross-layer diff  :  22/22  as expected
+  Cross-layer diff  :  24/24  as expected
   VERDICT: all four suites ran and passed.
 ```

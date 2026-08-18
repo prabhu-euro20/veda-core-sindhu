@@ -1614,6 +1614,7 @@
          $veda_resv_rs1_vcap = ($instr[19] == 1'b0);      // 4-bit vcap in a 5-bit rs1 slot
          $veda_resv_rd_vcap  = ($instr[11] == 1'b0);      // 4-bit vcap in a 5-bit rd slot
          $veda_resv_rs2_vcap = ($instr[24] == 1'b0);      // 4-bit vcap in a 5-bit rs2 slot
+         $veda_resv_rs1_zero = ($instr[19:15] == 5'b0);   // R50: OCLEAR has no rs1
          $veda_resv_rs2_zero = ($instr[24:20] == 5'b0);   // slot consumed by nothing
          $veda_resv_rd_zero  = ($instr[11:7] == 5'b0);    // instruction has no destination
 
@@ -1871,6 +1872,21 @@
          // on an untagged or sealed source. Monotonic by construction (AND
          // only clears), so no bounds term.
          $is_veda_candperm = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0010111) && $veda_resv_rs1_vcap && $veda_resv_rd_vcap;
+         // ═══ R50 INCREMENT 1 -- OCLEAR ═════════════════════════════════════
+         // R50 measured that the capability register file crosses a compartment
+         // boundary intact, and the conventional answer is that a trusted
+         // switcher clears what it is not passing. THIS MACHINE COULD NOT DO
+         // THAT: no instruction reliably zeroed a capability register's VALUE.
+         // Every soft-fail in the derivation family clears the tag and carries
+         // the source's fields verbatim, and veda.bind.notrap on a live,
+         // openly-bindable slot SUCCEEDS and installs a full capability instead
+         // of clearing. The architecture had assigned a duty and shipped no tool.
+         //
+         // Custom-2, funct3 001, funct7 0011000 -- the next free slot. rs1 and
+         // rd are reserved-zero (R30(b)), so a nonzero field in either is an
+         // undefined encoding rather than a silently ignored operand.
+         $veda_oclear_mask[15:0] = $rs2_data[15:0];
+         $is_veda_oclear = $op_is_custom2 && ($funct3 == 3'b001) && ($funct7 == 7'b0011000) && $veda_resv_rs1_zero && $veda_resv_rd_zero;
 
          // ─────────────────────────────────────────────────────────
          //  VEDA-CORE RTL MILESTONE 3 DECODE — the Veda-Cap query family
@@ -2980,6 +2996,11 @@
             // decided and verified in Sail, veda_cap_insts.sail).
             $ocinvoke_wr_en = |cpu>>1$is_veda_ocinvoke && !|cpu>>1$veda_ocinvoke_violation &&
                               (#vreg == 4'd15);
+            // R50: OCLEAR's per-register enable. Bit i of an ordinary GPR mask
+            // clears capability register i, so this is an index-literal
+            // predicate exactly like OCInvoke's fixed-index one above. Read
+            // through |cpu>>1 for the same reason every other arm here does.
+            $oclear_wr_en = |cpu>>1$is_veda_oclear && |cpu>>1$veda_oclear_mask[#vreg];
             // RTL Milestone 11: OSpecialRW's own `cd` write -- an
             // ordinary $veda_rd_cap-indexed target (real operand, unlike
             // OCInvoke's fixed index above), receiving the ODA's OWN
@@ -3072,6 +3093,11 @@
                    // this instruction's own write to it.
                    $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_tag : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_tag : |cpu>>1$veda_oda_tag) :
                    $csealentry_wr_en ? |cpu>>1$veda_csealentry_ok :
+                                       // R50/OCLEAR clears the tag AND the value. The tag alone is not
+                                       // enough: the query family is deliberately un-gated, so an untagged
+                                       // register still answers cgetbase with the raw physical Base --
+                                       // the disclosure RTL-14 already paid for once.
+                                       $oclear_wr_en     ? 1'b0 :
                                        $RETAIN;
             // RTL-6b seed -- c11 names Object_ID 104, the reset-seeded
             // {valid, NOT resident} object, with every OTHER field built to
@@ -3144,6 +3170,7 @@
                                $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_object_id :
                                $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_object_id : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_object_id : |cpu>>1$veda_oda_object_id) :
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
+                                                                    $oclear_wr_en     ? 44'b0 :
                                                                     $RETAIN;
             $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 56'h8001_0300 : 56'b0) :
                           $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_base : 56'b0) :
@@ -3156,6 +3183,7 @@
                           $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_base :
                           $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_base : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_base : |cpu>>1$veda_oda_base) :
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
+                                              $oclear_wr_en     ? 56'b0 :
                                               $RETAIN;
             $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 40'h40 : 40'b0) :
                             $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_length : 40'b0) :
@@ -3168,6 +3196,7 @@
                             $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_length :
                             $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_length : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_length : |cpu>>1$veda_oda_length) :
                             $csealentry_wr_en ? |cpu>>1$veda_rs1cap_length :
+                                                $oclear_wr_en     ? 40'b0 :
                                                 $RETAIN;
             // A fresh Bind always starts at the object's own beginning
             // (VEDA_CORE_SPEC.md Section 4) -- Offset isn't sourced from
@@ -3201,6 +3230,7 @@
                             $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_offset :
                             $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_offset : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_offset : |cpu>>1$veda_oda_offset) :
                             $csealentry_wr_en ? |cpu>>1$veda_rs1cap_offset :
+                                                $oclear_wr_en     ? 40'b0 :
                                                 $RETAIN;
             // RTL-5 (R10) seed: c12 CODE Execute|Invoke (0x0402), c13 DATA
             // Invoke-only (0x0400, deliberately NON-executable so it passes
@@ -3252,6 +3282,7 @@
                            $ocinvoke_wr_en ? |cpu>>1$veda_cs2_perms :
                            $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_perms : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_perms : |cpu>>1$veda_oda_perms) :
                            $csealentry_wr_en ? |cpu>>1$veda_rs1cap_perms :
+                                                                $oclear_wr_en     ? 16'b0 :
                                                                 $RETAIN;
             // A fresh Bind always carries the UNSEALED sentinel (Section
             // 1: "otype always set to 0xFFFF... sealing only ever happens
@@ -3305,6 +3336,13 @@
                            // pattern above but with a fixed value instead of
                            // a capability-derived one.
                            $csealentry_wr_en ? 16'hFFFE :
+                                                                // R50/OCLEAR: 0xFFFF, NOT zero. isSealedCap tests otype !=
+                                                                // UNSEALED_OTYPE, and Rebind tests it on its DESTINATION with no
+                                                                // tag conjunct -- so a zeroed otype would make every cleared
+                                                                // register permanently un-Rebindable while its tag read 0 and
+                                                                // every tag assertion stayed green. That is R24 re-created. Sail's
+                                                                // zero_capability carries UNSEALED_OTYPE for this reason.
+                                                                $oclear_wr_en     ? 16'hFFFF :
                                                                 $RETAIN;
             // Cached generation, for the staleness re-check below. OCL.C
             // restores the generation a real OCS.C actually stored --
@@ -3345,6 +3383,7 @@
                              $ocinvoke_wr_en ? |cpu>>1$veda_cs2_reserved :
                              $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_reserved : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_reserved : |cpu>>1$veda_oda_reserved) :
                              $csealentry_wr_en ? |cpu>>1$veda_rs1cap_reserved :
+                                                                  $oclear_wr_en     ? 24'b0 :
                                                                   $RETAIN;
 
             // RTL-2b: flags[19:0] -- the new opaque/reserved field of the
@@ -3358,6 +3397,7 @@
                             $oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en ||
                             $candperm_wr_en || $ocinvoke_wr_en || $ospecialrw_wr_en ||
                             $csealentry_wr_en) ? 20'b0 :
+                                                                  $oclear_wr_en     ? 20'b0 :
                                                                   $RETAIN;
 
          // ─────────────────────────────────────────────────────────
@@ -3764,8 +3804,34 @@
          //  exceed cs1's own current window, the same "manipulate" family
          //  convention as OCA above.
          // ─────────────────────────────────────────────────────────
-         $veda_csetbounds_new_base[31:0]   = $veda_rs1cap_base + {16'b0, $veda_rs1cap_offset};
-         $veda_csetbounds_new_length[15:0] = $rs2_data[15:0];
+         // ═══ R53 -- THIS WAS COMPUTED AT THE PRE-WIDENING WIDTHS ═══════════
+         //
+         // These two signals were [31:0] and [15:0] -- the Base-32 / Length-16
+         // shape the capability format HAD BEFORE increment 3 widened it to
+         // Base 56 / Length 40. The operands beside them are already wide
+         // ($veda_rs1cap_base[55:0], $veda_rs1cap_offset[39:0]) and the results
+         // are consumed into $base[55:0] and $length[39:0], so the narrowing
+         // happened here and nowhere else. A site the widening missed.
+         //
+         // MEASURED across the two layers, not derived --
+         // difftest/probes/p22_csetbounds_width.S: a CSetBounds requesting
+         // Length 0x10000 on an unbounded parent produced 0x00010000 on Sail
+         // and 0x00000000 on the RTL. Its two controls (a request of 0x40, and
+         // the parent's own Length read before any derivation) AGREE on both
+         // layers, so the probe measures the width and not a broken CSetBounds.
+         //
+         // The RTL half was FAIL-CLOSED -- a truncated-to-zero Length grants
+         // nothing -- so this is a correctness divergence rather than an
+         // escape, and a program correct against the specification failed on
+         // the hardware. The BASE half is not fail-closed: above 4 GiB the sum
+         // would wrap and the capability would name different memory entirely.
+         // That half is UNMEASURED -- this testbench's memory map cannot reach
+         // 2^32 -- and is recorded as unmeasured rather than claimed.
+         //
+         // Twenty increments of a differential suite did not catch it because
+         // no probe had ever exercised CSetBounds above 16 bits.
+         $veda_csetbounds_new_base[55:0]   = $veda_rs1cap_base + {16'b0, $veda_rs1cap_offset};
+         $veda_csetbounds_new_length[39:0] = $rs2_data[39:0];
          // Monotonic narrowing: the new window, starting at the current
          // position, must not extend past cs1's own remaining Length --
          // the same principle already applied for CSetBounds in Sail.
@@ -3773,7 +3839,18 @@
          // now while rs2_data is 64, so mixing a {24'b0,40} term with a
          // {48'b0,16} term would silently size the expression to the widest
          // operand and compare misaligned magnitudes.
-         $veda_csetbounds_window_ok = (({24'b0, $veda_rs1cap_offset}) + {48'b0, $rs2_data[15:0]}) <= {24'b0, $veda_rs1cap_length};
+         // R53, third site and the one that decides the REFUSAL: the check was
+         // validating the TRUNCATED request, so a request above 0xFFFF passed
+         // as zero and stored zero -- silently minting a useless capability
+         // instead of refusing. It now sees the whole request, exactly as Sail
+         // does (`unsigned(new_length)` over the full 64-bit value), so a
+         // request the parent cannot cover is REFUSED rather than truncated.
+         //
+         // 65 BITS, and that is R18 again rather than caution: offset is 40 and
+         // the request is 64, so their sum does not fit 64 -- computed at 64 a
+         // huge request wraps to a small sum and PASSES. Sail is immune because
+         // its integers are unbounded; hardware has to be told.
+         $veda_csetbounds_window_ok = ({25'b0, $veda_rs1cap_offset} + {1'b0, $rs2_data}) <= {25'b0, $veda_rs1cap_length};
          $veda_csetbounds_ok = $veda_rs1cap_tag && !$veda_sealed && $veda_csetbounds_window_ok;
 
          // ─────────────────────────────────────────────────────────
@@ -5012,7 +5089,7 @@
             $is_veda_cgettype || $is_veda_cgetaddr || $is_veda_cgetoffset || $is_veda_cgetobjectid ||
             $is_veda_csetbounds || $is_veda_csetboundsexact || $is_veda_oca || $is_veda_cseal ||
             $is_veda_cunseal || $is_veda_ocinvoke || $is_veda_ospecialrw || $is_veda_ocjalr ||
-            $is_veda_csealentry || $is_veda_ocreturn || $is_veda_candperm;
+            $is_veda_csealentry || $is_veda_ocreturn || $is_veda_candperm || $is_veda_oclear;
             // custom-3 is deliberately absent -- R36 retired its one
             // instruction, and $veda_op_claimed no longer claims the opcode.
          $veda_undef_encoding = $veda_op_claimed && !$veda_decoded;

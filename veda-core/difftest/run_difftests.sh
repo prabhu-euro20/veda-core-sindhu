@@ -41,6 +41,8 @@ p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STO
 p18_cow_not_pageable.S  AGREE      R38(b) CLOSED: page.out refuses on a copy-on-write object
 p19_bind_reserved_mode.S AGREE     R44 CLOSED: bind mode 0b11 refused at DECODE on both layers
 p20_oda_scope.S         AGREE      R47 CLOSED: the ODA's window is load-bearing on the delegated path
+p22_csetbounds_width.S  AGREE      R53 CLOSED: CSetBounds is computed at the widened widths on both layers
+p23_oclear.S            AGREE      R50 increment 1: OCLEAR zeroes the VALUE, keeps otype UNSEALED
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -306,3 +308,48 @@ echo "$pass/$((pass+fail)) as expected"
 # that broke OCInvoke, or trapped everything after any crossing, gets w0/w1
 # right and fails here), and w5 is Machine re-delegating and User minting again
 # -- the only word that shows the clear is a clear rather than a poisoning.
+
+# p22_csetbounds_width -- R53. The RTL computed CSetBounds at the PRE-WIDENING
+# widths: $veda_csetbounds_new_base[31:0] and _new_length[15:0], while its own
+# operands are 56 and 40 bits and its results feed $base[55:0] and $length[39:0].
+# A site increment 3's capability-format widening missed. A THIRD site was worse
+# -- the window check itself validated the truncated request, so a request above
+# 0xFFFF passed as zero and stored zero, silently minting a useless capability
+# instead of refusing.
+#
+# MEASURED BEFORE THE FIX: a CSetBounds requesting Length 0x10000 on an
+# unbounded parent gave w0 = 0x00010000 on Sail and 0x00000000 on the RTL. Its
+# two controls -- a request of 0x40, and the parent's own Length read before any
+# derivation -- AGREED on both layers throughout, so the probe measures the width
+# and not a broken CSetBounds. The RTL half was fail-closed (a zero Length grants
+# nothing), so this was a correctness divergence rather than an escape; the BASE
+# half is not fail-closed, and above 4 GiB the sum would wrap, but this
+# testbench's memory map cannot reach 2^32 so that half is recorded UNMEASURED.
+#
+# Twenty increments of a differential suite missed it because no probe had ever
+# exercised CSetBounds above 16 bits. The window check is now 65 bits wide --
+# offset is 40 and the request is 64, so at 64 bits a huge request wraps to a
+# small sum and PASSES. Sail is immune because its integers are unbounded.
+#
+# p23_oclear -- R50 increment 1. There was NO instruction on this machine that
+# reliably zeroed a capability register's value: every soft-fail in the
+# derivation family clears the tag and carries the source's fields verbatim, and
+# veda.bind.notrap on a live openly-bindable slot SUCCEEDS and installs a full
+# capability instead of clearing. So CHERI's answer to R50 -- a trusted switcher
+# clears what it does not pass -- was a duty this architecture had assigned and
+# shipped no tool for.
+#
+# w2 is why the clear writes VALUES and not just tags: the query family is
+# deliberately un-gated, so a tag-only clear still answers cgetbase with the raw
+# physical Base (RTL-14's lesson). w3 is why the cleared otype is 0xFFFF and not
+# zero: isSealedCap tests otype != UNSEALED_OTYPE and Rebind tests it on its
+# DESTINATION with no tag conjunct, so an all-zeros clear would leave every
+# cleared register permanently un-Rebindable while its tag read 0 either way and
+# every tag assertion stayed green -- R24 re-created. w6 proves that choice is
+# load-bearing. w4 and w5 are the over-refusal controls: a layer that wiped the
+# whole file on this opcode gets w1-w3 right and fails both.
+#
+# The first draft of this probe gave the dereferenced object Perms 0x0004 (Load
+# only) and then stored through it. Both layers AGREED on that failure -- w5 was
+# 0 on Sail and x on the RTL, w7 counted a trap -- and the verdict line still
+# said AGREE. Caught by reading the signature word by word. Eighth instance.

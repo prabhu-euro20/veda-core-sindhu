@@ -107,3 +107,4 @@ veda-core/security_trap_demo/
 # unknown vintage.
 **/difftest/*.vvp
 **/difftest/*.o
+.verification.lock

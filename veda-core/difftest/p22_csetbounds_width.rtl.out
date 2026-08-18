@@ -1,0 +1,2 @@
+RTL signature written to /home/prabhu/veda-core-sindhu/veda-core/difftest/p22_csetbounds_width.rtl.sig
+/home/prabhu/veda-core-sindhu/veda-core/difftest/tb_diff.sv:28: $finish called at 30016000 (1ps)
