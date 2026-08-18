@@ -188,6 +188,7 @@ are now entered. The register runs **R1..R59 with no gaps.**
 | **R52 CLOSED** | the creation-time binding policy: an object created INSIDE a compartment belongs to that compartment's domain; ambient-created objects stay open. Two lines per layer, no new instruction. **The ambient arm is what keeps R17's retraction from repeating** -- demonstrated with the return-path control intact. Residual stated: the gate's subject is the REGION, so two compartments in one region remain one principal by R10's design | **[FILE, COMMITTED]** `sail_tests/vc_r52_creation_domain.S` |
 | **R58** | the R52 landing hit Populate and DESTROY instead of Populate and POPULATE-FAST. Destroy inherited the destroyer's domain (breaking R41) and populate.fast still wrote ANY -- **and the shipped C allocator uses exactly that encoding, so R52 was void for every heap object while being reported closed**. Both suites stayed green throughout. Corrected, plus the pre-existing RTL Destroy divergence closed in Sail's direction | **[FILE, COMMITTED]** `sail_tests/vc_r58_domain_writers.S` |
 | **R59** | Sail resets `owner_hart` on Populate, Populate-Fast and Destroy; the RTL's only dynamic write to that byte was the owner CLAIM, so a re-minted object inherited the previous occupant's owner -- **benign at MHARTID 0 and PERMANENT above it, because no instruction can clear the byte**. And `$veda_owner_claim_en` lacked `!domain_violation`, so a trapping Bind still claimed. R41's class on the third carried field | **[FILE, COMMITTED]** `sail_tests/vc_r59_owner_hart_reset.S`, `rtl/sim/veda_smoke_r59_owner_reset.S` |
+| **R60 (D5)** | the CRBR saved shadow was released by NO exit `OCRETURN` takes and installed by ANY later xret. `veda_trap_frame_abandon` freed the depth, the mepcc triple and the poison, never the shadow; `veda_crbr_restore_on_xret` fires on the sentinel ALONE. So a handler entered from a region-1 compartment and left by OCRETURN -- **the only exit the shipped switcher takes** -- stranded region 1, and the next `mret` by unrelated region-0 code installed it. **Traced on the unfixed Sail model and measured on the unfixed RTL**; both layers agreed, so a design gap, not a divergence. Weakens R55's `rt_valid` gate via `veda_region_is_resident`'s current-region exemption | **[FILE, COMMITTED]** `sail_tests/vc_d5_crbr_shadow_leak.S`, `rtl/sim/veda_smoke_d5_crbr_shadow_leak.S` |
 | **R51 CORRECTED** | its stated cause was wrong. `test_fixtures = false` does NOT disable region seeding (writes at `veda_regs.sail:1231-1242`, the guard opens at `:1530`). `p21_oda_crossing.S` measured nothing because its compartment declared `Length 0x40` while its terminating `ecall` sat one word past that window. Corrected to `0x200`, it runs and agrees on all seven words -- **the compartment crossing's first cross-layer coverage** | **[FILE, COMMITTED]** `difftest/probes/p21_oda_crossing.S` |
 
 ### Open, honestly
@@ -227,8 +228,8 @@ and `0 programs run` reads as a clean line rather than an outage.
 Current, through the fixed entry point, in a shell with no conda active:
 
 ```
-  Sail self-check   : 110/110 passed
-  RTL milestones    :  99/99  passed
+  Sail self-check   : 111/111 passed
+  RTL milestones    : 100/100 passed
   ACT4 conformance  :  51/51  passed
   Cross-layer diff  :  25/25  as expected
   VERDICT: all four suites ran and passed.

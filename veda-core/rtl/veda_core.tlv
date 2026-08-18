@@ -5762,10 +5762,22 @@
          $veda_saved_region[19:0] = $reset ? 20'hFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_region :
                                      (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? 20'hFFFFF :
+                                     //  D5: OCRETURN releases the shadow too. It is the
+                                     //  architecture's SECOND exit from a trap handler and
+                                     //  the only one the shipped switcher takes, and the
+                                     //  mret arm above fires on the SENTINEL ALONE -- so a
+                                     //  shadow left standing here is installed by the next
+                                     //  mret the machine executes, whoever executes it and
+                                     //  for whatever unrelated reason. Unconditional, like
+                                     //  Sail's veda_crbr_release: the region was installed
+                                     //  from cs1 by the arm above, so a saved one is
+                                     //  superseded by definition.
+                                     (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? 20'hFFFFF :
                                                                                               >>1$veda_saved_region;
          $veda_saved_region_base[31:0] = $reset ? 32'b0 :
                                           (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_odt_base :
                                           (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? 32'b0 :
+                                          (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation)) ? 32'b0 :
                                                                                                    >>1$veda_saved_region_base;
          $veda_pcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                    (>>1$veda_trap_taken) ? 40'hFFFFFFFFFF :

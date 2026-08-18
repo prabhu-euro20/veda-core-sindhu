@@ -208,3 +208,26 @@ whose obligation is recorded in Section 5.
   tests were updated; these two were missed, and currently pass only because a 65535-byte window
   happens to contain their recovery label). Also, seven testbenches on disk are not wired into the
   runner, including both dedicated OCJALR tests.
+
+
+---
+
+## Amendment, R60 (D5): `$veda_saved_region` had no OCRETURN arm
+
+Section 3.3 and the M8 mutant describe the sentinel and the `mret` restore, both of which this suite
+measures correctly. What no test here could see is that `$veda_saved_region` had **reset,
+trap-capture and `mret` arms and no OCRETURN arm at all** -- recorded as **DESIGN_07 R60 (D5)**, and
+present identically on Sail, so a design gap rather than a divergence.
+
+Because the `mret` restore arm on `$veda_current_region` fires on the **sentinel alone**, a shadow
+left standing by an OCRETURN exit is installed by the next `mret` the machine executes. Measured on
+the unfixed hardware: `after the OCRETURN exit: saved=0x1`, and with the intermediate assertion
+lifted, `after an unrelated mret: region=1`.
+
+Both `$veda_saved_region` and `$veda_saved_region_base` now carry an OCRETURN release arm. New test:
+`sim/veda_smoke_d5_crbr_shadow_leak.S` + testbench, shown to fail with the arms stripped from a copy
+of the generated Verilog.
+
+**Why the existing coverage could not reach it:** every OCRETURN in this suite before D5 was taken
+either from region-0 code (nothing captured) or as the *return leg* of the R10 round-trip, whose
+handler exits by `mret` -- so no test ever left a handler through a crossing while a shadow was live.

@@ -175,3 +175,28 @@ livelocking test can ever hang CI.
 - **Multi-hart is untouched.** The single-hart answer ("hardware refuses to clear residency on the
   current/saved region") does not generalize to "one hart evicts a region another hart's CRBR
   names" -- that stays on the Phase 6 checklist.
+
+
+---
+
+## Amendment, R60 (D5): `mret` is not the only consumer
+
+This document's Section 3.2 and the M6 mutant both describe the shadow as **self-consuming on the
+xret restore**, which is what R10 shipped and what this suite measured. It was incomplete, and the
+gap was a real bug -- recorded as **DESIGN_07 R60 (D5)**.
+
+`veda_trap_frame_abandon`, which **OCRETURN** calls, released the depth, the mepcc triple and the
+poison, and **not** the saved region. Since `veda_crbr_restore_on_xret` fires on the sentinel alone
+-- no depth term, deliberately outside the mepcc guard -- a handler entered from a region-1
+compartment and left by OCRETURN stranded `saved_region = 1`, and **the next `mret` the machine
+executed, by unrelated region-0 code for an unrelated reason, installed region 1.** Measured by
+instruction trace on the unfixed model.
+
+OCRETURN now also calls `veda_crbr_release()`, unconditionally, immediately after `veda_crbr_load`
+-- the region has just been installed from `cs1`, so a saved one is superseded by definition. New
+test: `vc_d5_crbr_shadow_leak.S`, built from `vc_r10_crbr_invoke_trap_return.S` with exactly one
+change -- the handler leaves by OCRETURN instead of `mret`.
+
+**The lesson for this document's own mutation census:** M6 killed the self-consume on the `mret`
+path and proved that path is checked. It could not see that a second consumer was missing entirely,
+because a mutation census can only mutate code that exists.

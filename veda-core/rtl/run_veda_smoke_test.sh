@@ -659,6 +659,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r59.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R59 owner_hart reset)"
 vvp "$SIM/sim_r59.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r59_owner_reset.hex" | tee -a "$RUNLOG"
 
+echo "==> D5: Compiling (OCRETURN releases the CRBR saved shadow)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_d5.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_d5_crbr_shadow_leak.sv"
+echo "==> Simulating (D5 CRBR shadow release)"
+vvp "$SIM/sim_d5.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_d5_crbr_shadow_leak.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"
