@@ -2375,8 +2375,17 @@
          // type authorities, shared services -- stay ANY and remain bindable
          // from anywhere. Measured: a compartment in region 0 binding an
          // ambient-created object still succeeds.
-         $veda_creating_domain[19:0] = ($veda_pcc_object == 44'b0) ? VEDA_DOMAIN_ANY
-                                                                   : $veda_pcc_object[43:24];
+         // THE SENTINEL IS ALL-ONES, NOT ZERO, and the first draft of this line
+         // tested against 44'b0. It was ACCIDENTALLY CORRECT in every existing
+         // test and that is what makes it worth recording: VEDA_OBJECT_NONE is
+         // 44'hFFFFFFFFFFF, whose top 20 bits are exactly VEDA_DOMAIN_ANY, so
+         // the wrong test produced the right answer in the ambient case by
+         // coincidence. It diverged from Sail only for the one Object_ID the
+         // coincidence does not cover -- {region 0, local 0}, a perfectly legal
+         // id -- where the RTL would have written ANY (fail-OPEN) while Sail
+         // wrote domain 0. Invisible to every test in the corpus.
+         $veda_creating_domain[19:0] = ($veda_pcc_object == VEDA_OBJECT_NONE) ? VEDA_DOMAIN_ANY
+                                                                             : $veda_pcc_object[43:24];
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
                                  ($veda_pcc_object == VEDA_OBJECT_NONE) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
