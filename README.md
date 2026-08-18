@@ -157,18 +157,25 @@ https://github.com/user-attachments/assets/a454737e-e342-45c1-81d3-4bb3c8d80044
 **(as of 2026-08-18, after the R36..R43 hardening pass -- see
 `veda-core/EVIDENCE_INDEX.md`'s dated addendum for every finding traced to its test, and
 `../veda-core-linux/design/DESIGN_07_ROBUSTNESS_AND_SECURITY_HARDENING.md` for the findings
-register, which runs R1..R43 with no gaps.)**
+register, which runs R1..R47 with no gaps.)**
 
 **One command reproduces all four suites:**
 
     veda-core/verification.sh
 
-- **Sail formal model: 102/102** self-checking tests.
+It ends with an explicit verdict line. **Until R46 it could not fail** -- it captured each suite's
+output into a variable and never read an exit code, and it was measured exiting 0 while printing
+`Cross-layer diff : 0/21 as expected`, because the 21 differential probes had not run at all
+(`difftest/rundiff.sh` took `iverilog` from the caller's ambient `PATH` while both sibling runners
+self-activate conda). The exit code is now the verdict, plus a guard the exit code cannot give:
+every suite must report a **nonzero total**.
+
+- **Sail formal model: 104/104** self-checking tests.
 - **RTL milestone smoke-test regression: 90/90**, zero regressions; per-milestone results live in
   `veda-core/rtl/`.
 - **RISC-V ACT4 RV64I conformance: 51/51**, zero regressions (run directly against
   `veda_core.tlv`; see `veda-core/rtl/ACT4_CONFORMANCE_RESULTS.md`).
-- **Cross-layer differential: 20/20 as expected.** Twenty probes run the same program on the Sail
+- **Cross-layer differential: 22/22 as expected.** Twenty-two probes run the same program on the Sail
   model and the RTL and compare result signatures **word for word**. This suite was missing from
   this list entirely, and it is the one that finds what neither layer can find alone -- an
   arithmetic wrap the model's arbitrary-precision integers cannot express, a refusal that traps and

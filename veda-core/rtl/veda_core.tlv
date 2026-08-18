@@ -2653,18 +2653,43 @@
          // the same condition, free to drift apart later.
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
                                           (!($priv || $veda_oda_authorized) || $veda_odt_retired ||
-                                           $veda_object_is_executing);
+                                           $veda_object_is_executing ||
+                                           // R47: BOTH windows. The new one because this
+                                           // instruction CREATES the authority; the old one
+                                           // because repopulating a LIVE slot bumps its
+                                           // generation and repoints it, so without it a
+                                           // delegated actor hijacks any descriptor in the
+                                           // machine by aiming its new Base into its own
+                                           // window. $veda_odt_valid gates the old half and
+                                           // MUST: a free slot reads Base 0 Length 0, and an
+                                           // ungated test would make every unused slot
+                                           // unmintable by any ODA not covering address zero
+                                           // -- deleting the mechanism rather than scoping it.
+                                           $veda_oda_denies_new ||
+                                           ($veda_odt_valid && $veda_oda_denies_old));
          // RTL-17: authority exactly as Populate/Destroy, plus a refusal on a
          // slot that holds nothing -- a policy on a non-existent object is
          // meaningless, and allowing it would let software pre-stage rules on
          // slots someone else has yet to populate.
+         // R47: a policy write is authority over the descriptor, so it needs
+         // authority over the memory that descriptor names.
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
-                                           (!($priv || $veda_oda_authorized) || !$veda_odt_valid);
+                                           (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
+                                            $veda_oda_denies_old);
          $veda_odt_set_cow_violation = $is_veda_odt_set_cow &&
-                                        (!($priv || $veda_oda_authorized) || !$veda_odt_valid);
+                                        (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
+                                         $veda_oda_denies_old);
+         // R47 on Destroy is deliberately NOT gated on $veda_odt_valid, unlike
+         // the two policy writes above. Destroy bumps the generation of an
+         // invalid slot too and can retire it, so an ungated delegated actor
+         // could burn the temporal-safety counter of every slot it does not
+         // own. A never-populated slot reads Base 0 Length 0 and is refused
+         // unless the ODA covers address zero; a slot this actor destroyed
+         // itself keeps its Base and stays in reach.
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
                                           (!($priv || $veda_oda_authorized) ||
-                                           $veda_object_is_executing);
+                                           $veda_object_is_executing ||
+                                           $veda_oda_denies_old);
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: the paging pair's refusal conditions. Follows
          //  Destroy's authority shape, NOT Populate's -- Sail's gate is
@@ -2714,6 +2739,8 @@
                                         // sharing resolves. See the Sail arm for
                                         // the full reasoning and the successor.
                                         $veda_odt_cow ||
+                                        // R47: eviction is authority over the object.
+                                        $veda_oda_denies_old ||
                                         ($veda_odt_gen == 24'hFFFFFF));
          //  PAGE-IN refuses unless the object is live AND currently paged
          //  out. The `resident` half is the security-critical one: page-in
@@ -2727,6 +2754,15 @@
          $veda_odt_page_in_refusal  = $is_veda_odt_page_in &&
                                        (!($priv || $veda_oda_authorized) ||
                                         !$veda_odt_valid ||
+                                        // R47: BOTH windows, and for a reason page-out does
+                                        // not have -- this instruction CHOOSES WHERE THE
+                                        // OBJECT LANDS, so without the new half a delegated
+                                        // actor could page a foreign object into its own
+                                        // window and own it outright. The old Base survives
+                                        // page-out (preserved, stale but present), so the old
+                                        // half is a real test rather than a read of zeros.
+                                        $veda_oda_denies_old ||
+                                        $veda_oda_denies_pin ||
                                         $veda_odt_resident);
          //  Page-out's generation bump. SATURATING, not a raw +1, and the
          //  refusal above already makes the saturation unreachable -- so
@@ -4227,6 +4263,59 @@
          // by any real instruction).
          $veda_oda_sealed = ($veda_oda_otype != 16'hFFFF);
          $veda_oda_authorized = $veda_oda_tag && !$veda_oda_sealed && $veda_oda_perms[7];
+
+         // ═══ R47 -- THE ODA CARRIES A WINDOW, AND NOTHING READ IT ═══════
+         //
+         // The predicate directly above is the whole of the delegated
+         // authority to write the Object Descriptor Table, and it is three
+         // bits wide: tag, otype, Perms[7]. $veda_oda_base, _length, _offset
+         // and _object_id were registered, maintained across every
+         // OSpecialRW and every trap -- and READ BY NOTHING. So any holder
+         // of any ODA could mint a descriptor naming any Base, any Length
+         // and any Perms, Bind it, and dereference it: a bearer token over
+         // all of memory, in the register this design made a capability
+         // precisely so it could carry a window.
+         //
+         // MEASURED, AND THE MEASUREMENT WAS ALREADY IN THIS SUITE, PASSING:
+         // rtl/sim/veda_smoke_m11.S installs an ODA whose window is
+         // [0x80011000, 0x80011040), drops to User, and from User mints
+         // object 41 at Base 0x80012000 -- four kilobytes outside it.
+         //
+         // THE RULE, uniform across all seven ODA-gated instructions: on the
+         // DELEGATED path only, the memory a descriptor names must lie inside
+         // the ODA's window -- what the entry names NOW and what it will name
+         // AFTER. Machine takes the other half of the OR and is untouched.
+         //
+         // 57 BITS, and that is the R18 lesson, not a style choice: Base is
+         // 56 bits and Length is 40, so Base+Length overflows 56 and a
+         // containment test computed at the operands' own width wraps and
+         // reports the whole machine as contained. Same width the R45 pin
+         // comparators use, for the same reason.
+         $veda_oda_lo[56:0] = {1'b0, $veda_oda_base};
+         $veda_oda_hi[56:0] = {1'b0, $veda_oda_base} + {17'b0, $veda_oda_length};
+
+         // The window the looked-up entry already names.
+         $veda_oda_old_lo[56:0] = {1'b0, $veda_odt_base};
+         $veda_oda_old_hi[56:0] = {1'b0, $veda_odt_base} + {17'b0, $veda_odt_length};
+         // The window Populate / Populate-Fast would install.
+         $veda_oda_new_lo[56:0] = {1'b0, $veda_odtpd_new_base};
+         $veda_oda_new_hi[56:0] = {1'b0, $veda_odtpd_new_base} + {17'b0, $veda_odtpd_new_length};
+         // The frame Page-In would move the object to. Its own signal rather
+         // than $veda_odtpd_new_base, which falls through to the OLD base for
+         // every instruction that is not a Populate -- reusing it here would
+         // have made the new half of the page-in check compare the old window
+         // against itself and always pass.
+         $veda_oda_pin_lo[56:0] = {1'b0, $rs2_data[55:0]};
+         $veda_oda_pin_hi[56:0] = {1'b0, $rs2_data[55:0]} + {17'b0, $veda_odt_length};
+
+         // Reached through the ODA rather than through Machine privilege.
+         $veda_oda_scoped = !$priv;
+         $veda_oda_denies_old = $veda_oda_scoped &&
+                                 !(($veda_oda_lo <= $veda_oda_old_lo) && ($veda_oda_old_hi <= $veda_oda_hi));
+         $veda_oda_denies_new = $veda_oda_scoped &&
+                                 !(($veda_oda_lo <= $veda_oda_new_lo) && ($veda_oda_new_hi <= $veda_oda_hi));
+         $veda_oda_denies_pin = $veda_oda_scoped &&
+                                 !(($veda_oda_lo <= $veda_oda_pin_lo) && ($veda_oda_pin_hi <= $veda_oda_hi));
 
          // The TSC (Trusted Stack Capability): minimal OS kernel
          // Milestone A's own second Special Capability Register, term-

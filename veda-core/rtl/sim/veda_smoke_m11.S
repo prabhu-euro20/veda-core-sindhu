@@ -39,13 +39,32 @@ _start:
     #    with zero ordinary-privilege help. --
     VEDA_DROP_TO_USER(x28, x29)   // R36: the architected drop -- mstatus.MPP=U then mret
 
+    # ═══ R47 CHANGED THIS LINE, AND THE OLD ONE WAS THE ESCAPE ═══════════
+    # This test used to mint object 41 at Base 0x80012000 -- FOUR KILOBYTES
+    # OUTSIDE its own authority object's window, which is object 40 at
+    # [0x80011000, 0x80011040) as populated at the top of this file. It passed,
+    # and its comment above calls that "the real proof" the ODA path works.
+    # It is that. It was also a demonstration that a User-mode holder of an ODA
+    # could mint a descriptor over memory the ODA never named, Bind it, and
+    # dereference it -- and by passing, it pinned the escape as the contract.
+    #
+    # veda_oda_authorized() reads three bits of a 256-bit capability: tag,
+    # otype, Perms[7]. Base and Length were carried through every OSpecialRW
+    # and every trap and read by nothing. R47 makes them load-bearing on the
+    # DELEGATED path only; Machine still needs no ODA and is untouched.
+    #
+    # So the mint now lands INSIDE the window -- Base 0x80011000, Length 0x20 --
+    # which is what a correctly delegated allocator does, and the test's own
+    # subject (ODT-Populate succeeding on ODA authority alone, with ordinary
+    # privilege fully dropped) is unchanged and still proven. The refusal half
+    # lives in difftest/probes/p20_oda_scope.S, where both layers are compared.
     li   x1, 41
-    li   x2, 0x8001200000400300
+    li   x2, 0x8001100000200300
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2  # veda.odt.populate x5, x1, x2  -- must succeed via ODA alone (!$priv now)
 
     li   x1, 41
     .insn i 0x0b, 0x5, x4, x1, 0  # veda.bind c4, x1
     .insn r 0x5b, 0x0, 0x03, x13, x4, x0  # cgettag  x13, c4   -- expect 1 (a real ODT entry really was created)
-    .insn r 0x5b, 0x0, 0x00, x14, x4, x0  # cgetbase x14, c4   -- expect 0x80012000
+    .insn r 0x5b, 0x0, 0x00, x14, x4, x0  # cgetbase x14, c4   -- expect 0x80011000 (R47: inside the ODA's window)
 1:
     j 1b

@@ -40,6 +40,7 @@ p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so
 p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STORE_CAPABILITY are
 p18_cow_not_pageable.S  AGREE      R38(b) CLOSED: page.out refuses on a copy-on-write object
 p19_bind_reserved_mode.S AGREE     R44 CLOSED: bind mode 0b11 refused at DECODE on both layers
+p20_oda_scope.S         AGREE      R47 CLOSED: the ODA's window is load-bearing on the delegated path
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -241,3 +242,31 @@ echo "$pass/$((pass+fail)) as expected"
 # only case p5_reserved.S ever exercised. That probe also never read mcause at
 # all, so it reported AGREE throughout while the layers disagreed. Both blind
 # spots are closed: p5 now records the cause of each of its three refusals.
+
+# p20_oda_scope -- R47. veda_oda_authorized() is three terms wide on both layers
+# (tag, otype, Perms[7]); Base, Length, Offset and Object_ID -- 196 of the ODA's
+# 256 bits -- were consulted by none of the seven instructions it authorizes. So
+# the delegated authority to write the Object Descriptor Table was a bearer
+# token over ALL of memory: any ODA holder could mint a descriptor naming any
+# Base with any Perms, Bind it, and dereference it.
+#
+# THE MEASUREMENT WAS ALREADY IN THE RTL SUITE, PASSING. rtl/sim/veda_smoke_m11.S
+# installed an ODA whose window is [0x80011000, 0x80011040), dropped to User, and
+# from User minted object 41 at Base 0x80012000 -- four kilobytes outside it --
+# then Bound it and read back its Base as proof. Its own comment calls that "the
+# real proof" the ODA path works, and it is; it was also the escape, pinned as
+# the contract by a green test. That file now mints INSIDE its window and the
+# refusal half lives here, where both layers must agree.
+#
+# MEASURED AFTER: w0 0x02 / w1 0 (outside-window Populate refused AND nothing
+# minted), w2 1 / w3 0x80011000 (in-window Populate still works), w4 0x02
+# (outside-window Destroy refused too -- Destroy bumps the generation of any slot
+# it touches, so an unscoped delegate could burn the temporal-safety counter of
+# every object in the machine), w5 2 traps, w6 0 (in-window Destroy still works),
+# w7 0x80012000 (Machine holds the ODA and is still not scoped by it).
+#
+# w2, w6 and w7 are the three over-refusal controls, and they are not decoration:
+# without w2/w6 a layer that refused EVERY delegated ODT write would produce the
+# right answer for w0/w1/w4, and without w7 a fix that scoped both halves of the
+# `Machine | oda_authorized()` OR would pass everything else while breaking the
+# machine.

@@ -146,7 +146,7 @@ four labels.
 
 ---
 
-## ADDENDUM -- 2026-08-18 hardening pass (R36 through R43)
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R47)
 
 **Appended rather than merged into the 2026-07-28 index above, which is a snapshot
 of its own pass and stays intact.** Same legend. Every count here was produced by
@@ -169,7 +169,12 @@ the run recorded at the bottom of this section, not recalled.
 three repositories and in every commit message, then differencing against the
 `###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
 them were shipped, verified hardware fixes**, two of exploitable class. All four
-are now entered. The register runs **R1..R43 with no gaps.**
+are now entered. The register runs **R1..R47 with no gaps.**
+
+| **R44** | `veda.bind` mode `0b11` (`VEDA_BIND_RESERVED`) is refused at DECODE on both layers. It used to reach Sail's `Illegal_Instruction` arm only after three ODT-state-dependent traps had had their chance, so the refusal CAUSE for an unallocated encoding was an ODT oracle | **[FILE, COMMITTED]** `difftest/probes/p19_bind_reserved_mode.S` |
+| **R45** | the executing-object pin compares MEMORY, not names. Two Object_IDs may still legally name one range -- SLAB-CARVE mints children inside a parent by construction -- but an alias is no longer a handle for evicting the code a compartment is running | **[FILE, COMMITTED]** `sail_tests/vc_r45_odt_alias_neg.S` |
+| **R46** | `verification.sh` reads every suite's exit code and refuses a suite reporting a zero total; `difftest/rundiff.sh` resolves its own toolchain. **Measured: the entry point exited 0 while all 21 differential probes had not run** | **[FILE, COMMITTED]** `verification.sh`, `difftest/rundiff.sh` |
+| **R47** | the ODA's `Base`/`Length` are load-bearing on the delegated path -- all seven ODA-gated instructions. **The escape was a shipped, passing test**: `veda_smoke_m11.S` minted a descriptor four kilobytes outside its own authority's window from User mode and read back the Base as proof | **[FILE, COMMITTED]** `sail_tests/vc_r47_oda_scope_neg.S`, `difftest/probes/p20_oda_scope.S` |
 
 ### Open, honestly
 
@@ -194,3 +199,23 @@ entitled to write into** -- so the one command offered as "run this to verify"
 would have built into someone else's tree and verified whatever vintage happened
 to be sitting there. It now resolves its own location, and it runs the
 **cross-layer differential suite** too, which it never did.
+
+**R46 -- AND FOR A WHILE IT COULD NOT FAIL.** It captured each suite's output into a
+variable and never read an exit code, so it exited 0 regardless. Measured doing
+exactly that: three green numbers, a fourth reading `Cross-layer diff : 0/21 as
+expected`, exit 0 -- while the 21 differential probes had not run at all, because
+`difftest/rundiff.sh` took `iverilog` from the caller's ambient `PATH` and both of
+its sibling runners self-activate conda and it did not. Now the exit code is the
+verdict, and a second guard the exit code cannot give: **every suite must report a
+nonzero total**, because a suite that dies before running anything can still exit 0
+and `0 programs run` reads as a clean line rather than an outage.
+
+Current, through the fixed entry point, in a shell with no conda active:
+
+```
+  Sail self-check   : 104/104 passed
+  RTL milestones    :  90/90  passed
+  ACT4 conformance  :  51/51  passed
+  Cross-layer diff  :  22/22  as expected
+  VERDICT: all four suites ran and passed.
+```
