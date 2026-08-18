@@ -157,7 +157,7 @@ https://github.com/user-attachments/assets/a454737e-e342-45c1-81d3-4bb3c8d80044
 **(as of 2026-08-18, after the R36..R43 hardening pass -- see
 `veda-core/EVIDENCE_INDEX.md`'s dated addendum for every finding traced to its test, and
 `../veda-core-linux/design/DESIGN_07_ROBUSTNESS_AND_SECURITY_HARDENING.md` for the findings
-register, which runs R1..R47 with no gaps.)**
+register, which runs R1..R51 with no gaps.)**
 
 **One command reproduces all four suites:**
 
@@ -170,8 +170,8 @@ output into a variable and never read an exit code, and it was measured exiting 
 self-activate conda). The exit code is now the verdict, plus a guard the exit code cannot give:
 every suite must report a **nonzero total**.
 
-- **Sail formal model: 104/104** self-checking tests.
-- **RTL milestone smoke-test regression: 90/90**, zero regressions; per-milestone results live in
+- **Sail formal model: 105/105** self-checking tests.
+- **RTL milestone smoke-test regression: 98/98**, zero regressions; per-milestone results live in
   `veda-core/rtl/`.
 - **RISC-V ACT4 RV64I conformance: 51/51**, zero regressions (run directly against
   `veda_core.tlv`; see `veda-core/rtl/ACT4_CONFORMANCE_RESULTS.md`).

@@ -146,7 +146,7 @@ four labels.
 
 ---
 
-## ADDENDUM -- 2026-08-18 hardening pass (R36 through R47)
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R51)
 
 **Appended rather than merged into the 2026-07-28 index above, which is a snapshot
 of its own pass and stays intact.** Same legend. Every count here was produced by
@@ -169,12 +169,16 @@ the run recorded at the bottom of this section, not recalled.
 three repositories and in every commit message, then differencing against the
 `###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
 them were shipped, verified hardware fixes**, two of exploitable class. All four
-are now entered. The register runs **R1..R47 with no gaps.**
+are now entered. The register runs **R1..R51 with no gaps.**
 
 | **R44** | `veda.bind` mode `0b11` (`VEDA_BIND_RESERVED`) is refused at DECODE on both layers. It used to reach Sail's `Illegal_Instruction` arm only after three ODT-state-dependent traps had had their chance, so the refusal CAUSE for an unallocated encoding was an ODT oracle | **[FILE, COMMITTED]** `difftest/probes/p19_bind_reserved_mode.S` |
 | **R45** | the executing-object pin compares MEMORY, not names. Two Object_IDs may still legally name one range -- SLAB-CARVE mints children inside a parent by construction -- but an alias is no longer a handle for evicting the code a compartment is running | **[FILE, COMMITTED]** `sail_tests/vc_r45_odt_alias_neg.S` |
 | **R46** | `verification.sh` reads every suite's exit code and refuses a suite reporting a zero total; `difftest/rundiff.sh` resolves its own toolchain. **Measured: the entry point exited 0 while all 21 differential probes had not run** | **[FILE, COMMITTED]** `verification.sh`, `difftest/rundiff.sh` |
 | **R47** | the ODA's `Base`/`Length` are load-bearing on the delegated path -- all seven ODA-gated instructions. **The escape was a shipped, passing test**: `veda_smoke_m11.S` minted a descriptor four kilobytes outside its own authority's window from User mode and read back the Base as proof | **[FILE, COMMITTED]** `sail_tests/vc_r47_oda_scope_neg.S`, `difftest/probes/p20_oda_scope.S` |
+| **R48** | the ODA is CLEARED at OCInvoke and OCReturn, tag only. **Measured before the fix**: a User compartment holding only a code and a data capability destroyed the caller's object AND minted over the caller's window -- zero traps, mcause 0x00 -- and `OSpecialRW` being Machine-only meant the caller had no instruction with which to drop its own ODA before calling | **[FILE, COMMITTED]** `sail_tests/vc_r48_oda_inherit_neg.S`, `rtl/sim/veda_smoke_r48_oda_crossing.S` |
+| **R49** | seven programs were assembled by the runner and never simulated; one of them (`m16_neg`) had been asserting the opposite of the architecture since generation widened 8 -> 24 bits. Re-aimed onto the seeded near-saturated fixture, plus a coverage guard and a real exit code on the runner | **[FILE, COMMITTED]** `rtl/run_veda_smoke_test.sh`, `rtl/sim/veda_smoke_m16_neg.S` |
+| **R50** | **[OPEN, MEASURED]** the capability register file crosses a compartment boundary intact and the dereference checker has ZERO domain terms. A callee read `0xC0FFEE` out of the caller's object through a register it was never handed, zero traps. Larger than R48 | **[MEASURED, NOT FIXED]** DESIGN_07 R50 |
+| **R51** | **[OPEN, MEASURED]** the region table has no software write path at all, so OCInvoke cannot succeed without test fixtures -- the compartment crossing has never been differentially tested | **[FILE, COMMITTED]** `difftest/blocked/p21_oda_crossing.S`, plus a probe-coverage guard in `run_difftests.sh` |
 
 ### Open, honestly
 

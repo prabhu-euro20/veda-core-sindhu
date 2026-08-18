@@ -1,0 +1,5 @@
+using /home/prabhu/veda-core-sindhu/veda-core/difftest/p21_oda_crossing.sail.sig for test-signature output.
+HTIF located at 0x80000230
+begin_signature: 0x80070000
+end_signature: 0x80070040
+Entry point: 0x80000000

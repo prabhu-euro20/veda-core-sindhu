@@ -4230,7 +4230,45 @@
          // ODA was the only SCR) -- TSC below mirrors this exactly with
          // the opposite selector value, so the two registers are
          // genuinely independent, never aliased.
+         // ═══ R48 -- THE ODA IS CLEARED AT EVERY COMPARTMENT CROSSING ═══
+         //
+         // These two arms are a byte-for-byte mirror of $veda_ssc_tag's own
+         // (below), and the argument for them was already written down for the
+         // SSC -- naming ODA/TSC's "untouched by OCInvoke" convention as the
+         // thing an SSC must not follow, because a callee would inherit the
+         // caller's whole stack region. Nobody turned that argument back on
+         // the ODA.
+         //
+         // While the ODA was unscoped (pre-R47) it made no difference: the ODA
+         // reached all of memory from anywhere, so a crossing changed nothing.
+         // R47 gave it a window, and inheriting a window is inheriting MINT
+         // AUTHORITY OVER THE CALLER'S MEMORY. Measured on the specification
+         // layer first: a User compartment holding nothing but a code and a
+         // data capability DESTROYED the caller's object and MINTED a fresh
+         // descriptor over the caller's window, with ZERO traps.
+         //
+         // OCRETURN CARRIES THE SAME ARM, and on this machine that is not the
+         // "returning to a more-trusted caller" direction: the shipped
+         // switcher enters threads DOWNWARD through OCRETURN, never through
+         // OCInvoke. An OCInvoke-only clear would leave the project's own
+         // primary domain-entry path open.
+         //
+         // TAG ONLY. The eight value muxes below stay three-armed -- every
+         // consumer goes through $veda_oda_authorized, whose first term is
+         // this bit. Same discipline as the SSC clear.
+         //
+         // NOT MIRRORED HERE, deliberately, each stated so the absence is on
+         // the record: the TSC (zero consumers on either layer, and clearing
+         // it would falsify the switcher's own documented contract while every
+         // round-trip assertion stayed green, because they read value fields
+         // and never the tag); `mret` (a fourth compartment entry, but also
+         // the only instruction that lowers privilege and therefore the sole
+         // vehicle for delegating an ODA downward at all -- clearing there
+         // deletes the delegated half of all seven gates); and OCJALR (does
+         // not cross a compartment boundary, Milestone 22).
          $veda_oda_tag = (|cpu$reset || |cpu>>1$reset) ? 1'b0 :
+                          (>>1$is_veda_ocinvoke && !>>1$veda_ocinvoke_violation) ? 1'b0 :
+                          (>>1$is_veda_ocreturn && !>>1$veda_ocreturn_violation) ? 1'b0 :
                           (>>1$is_veda_ospecialrw && !>>1$veda_ospecialrw_violation && !>>1$veda_ospecialrw_scr_is_tsc && !>>1$veda_ospecialrw_scr_is_ssc) ? >>1$veda_rs1cap_tag :
                                                                                         >>1$veda_oda_tag;
          $veda_oda_object_id[43:0] = (|cpu$reset || |cpu>>1$reset) ? 44'b0 :

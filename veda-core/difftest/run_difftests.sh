@@ -219,6 +219,21 @@ while read -r probe expected _rest; do
   fi
 done <<< "$EXPECTED"
 
+# ═══ R49/R51 GUARD -- a probe that exists and is not listed is a dark test ══
+# p21_oda_crossing.S measured nothing and reported AGREE, and the only reason
+# that was caught is that its signature was read word by word rather than
+# trusted. Its successor failure mode would have been quieter still: leave the
+# file in probes/ and drop it from the table, and it becomes a test nobody runs
+# and nobody misses. Refuse instead.
+for f in "$D"/probes/*.S; do
+  b="$(basename "$f")"
+  if ! echo "$EXPECTED" | grep -q "^$b"; then
+    echo "FATAL: $b exists in probes/ but has no expected verdict -- it would never run." >&2
+    echo "  Add it to the EXPECTED table, or move it to difftest/blocked/ with a reason." >&2
+    exit 2
+  fi
+done
+
 echo "=== cross-layer differential results ==="
 for r in "${results[@]}"; do echo "$r"; done
 echo "---"
@@ -270,3 +285,24 @@ echo "$pass/$((pass+fail)) as expected"
 # right answer for w0/w1/w4, and without w7 a fix that scoped both halves of the
 # `Machine | oda_authorized()` OR would pass everything else while breaking the
 # machine.
+
+# p21_oda_crossing -- R48. OCInvoke narrows PCC, installs a fresh IDC, reloads
+# the CRBR and clears the SSC; it left veda_oda untouched. The argument against
+# that was already written down for the SSC, INSIDE the OCInvoke clause, naming
+# "ODA/TSC's own untouched-by-OCInvoke convention" as the thing an SSC must not
+# follow. Nobody turned it back on the ODA.
+#
+# Pre-R47 it was moot -- an unscoped ODA reached all of memory from anywhere.
+# R47 gave it a window, and inheriting a window is inheriting mint authority
+# over the caller's memory. MEASURED on Sail before the fix: a User compartment
+# holding nothing but a code and a data capability destroyed the caller's object
+# AND minted a fresh descriptor over the caller's window, ZERO traps, mcause
+# 0x00. And VEDA_OSPECIALRW is Machine-only for read and write, so the caller
+# had no instruction with which to drop its own ODA before calling -- there was
+# no software discipline to fall back on.
+#
+# w3 and w5 are the over-refusal controls and they are the point: w3 is the
+# callee doing its own legitimate work through the IDC it was handed (a layer
+# that broke OCInvoke, or trapped everything after any crossing, gets w0/w1
+# right and fails here), and w5 is Machine re-delegating and User minting again
+# -- the only word that shows the clear is a clear rather than a poisoning.

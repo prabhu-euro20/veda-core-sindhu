@@ -30,11 +30,18 @@ module tb;
       cyc_cnt = cyc_cnt + 1;
     end
 
-    $display("stale access after 256 destroys: x22=0x%0h (must be 0x600D)", dut.CPU_Xreg_val_a0[22]);
+    $display("stale access after generation exhaustion: x22=0x%0h (must be 0x600D)", dut.CPU_Xreg_val_a0[22]);
 
-    if (dut.CPU_Xreg_val_a0[22] == 64'h600D &&
+    // R49: x19 is the OVER-REFUSAL CONTROL and it is checked, not merely set.
+    // It proves the capability genuinely worked BEFORE the exhaustion. Without
+    // it a machine on which Object_ID 106 never bound at all would satisfy both
+    // assertions below for entirely the wrong reason -- the trap they demand
+    // would fire because nothing ever worked, not because retirement bit.
+    $display("pre-exhaustion sanity (control): x19=0x%0h (must be 0x600D)", dut.CPU_Xreg_val_a0[19]);
+    if (dut.CPU_Xreg_val_a0[19] == 64'h600D &&
+        dut.CPU_Xreg_val_a0[22] == 64'h600D &&
         dut.CPU_Xreg_val_a0[23] == 64'h600D) begin
-      $display("\n*** TEST PASSED *** (after 256 real Destroy operations wrap the 8-bit generation counter, the slot is now permanently retired -- a re-populate attempt is silently refused, and the original, now-genuinely-stale capability correctly hard-traps instead of successfully dereferencing memory it should have lost access to at the very first Destroy)");
+      $display("\n*** TEST PASSED *** (R49 re-aimed: two Destroys on the seeded near-saturated fixture (Object_ID 106, generation 0xFFFFFE) exhaust the real 24-bit counter, and the slot is then permanently retired -- a re-populate attempt is silently refused, and the original, now-genuinely-stale capability correctly hard-traps instead of successfully dereferencing memory it should have lost access to at the very first Destroy)");
     end else begin
       $display("\n*** TEST FAILED ***");
     end
