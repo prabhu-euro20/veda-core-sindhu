@@ -654,6 +654,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r48.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R48 ODA crossing clear)"
 vvp "$SIM/sim_r48.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r48_oda_crossing.hex" | tee -a "$RUNLOG"
 
+echo "==> R59: Compiling (Populate/Destroy reset owner_hart)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r59.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r59_owner_reset.sv"
+echo "==> Simulating (R59 owner_hart reset)"
+vvp "$SIM/sim_r59.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r59_owner_reset.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

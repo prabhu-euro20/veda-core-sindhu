@@ -146,7 +146,7 @@ four labels.
 
 ---
 
-## ADDENDUM -- 2026-08-18 hardening pass (R36 through R58)
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R59)
 
 **Appended rather than merged into the 2026-07-28 index above, which is a snapshot
 of its own pass and stays intact.** Same legend. Every count here was produced by
@@ -169,7 +169,7 @@ the run recorded at the bottom of this section, not recalled.
 three repositories and in every commit message, then differencing against the
 `###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
 them were shipped, verified hardware fixes**, two of exploitable class. All four
-are now entered. The register runs **R1..R58 with no gaps.**
+are now entered. The register runs **R1..R59 with no gaps.**
 
 | **R44** | `veda.bind` mode `0b11` (`VEDA_BIND_RESERVED`) is refused at DECODE on both layers. It used to reach Sail's `Illegal_Instruction` arm only after three ODT-state-dependent traps had had their chance, so the refusal CAUSE for an unallocated encoding was an ODT oracle | **[FILE, COMMITTED]** `difftest/probes/p19_bind_reserved_mode.S` |
 | **R45** | the executing-object pin compares MEMORY, not names. Two Object_IDs may still legally name one range -- SLAB-CARVE mints children inside a parent by construction -- but an alias is no longer a handle for evicting the code a compartment is running | **[FILE, COMMITTED]** `sail_tests/vc_r45_odt_alias_neg.S` |
@@ -187,6 +187,7 @@ are now entered. The register runs **R1..R58 with no gaps.**
 | **R56** | RT-Populate **decided against** as the next increment: two of its three justifications were false at source (R51's stated cause, and R52's grain), and the minimal version is a compartment escape on first execution -- regions 4..7 already alias region 0's base at reset on both layers. The region layout is disjoint only because the model truncates locals at 2^20; `region_entry` has no length | **[DESIGN_07 R56]** |
 | **R52 CLOSED** | the creation-time binding policy: an object created INSIDE a compartment belongs to that compartment's domain; ambient-created objects stay open. Two lines per layer, no new instruction. **The ambient arm is what keeps R17's retraction from repeating** -- demonstrated with the return-path control intact. Residual stated: the gate's subject is the REGION, so two compartments in one region remain one principal by R10's design | **[FILE, COMMITTED]** `sail_tests/vc_r52_creation_domain.S` |
 | **R58** | the R52 landing hit Populate and DESTROY instead of Populate and POPULATE-FAST. Destroy inherited the destroyer's domain (breaking R41) and populate.fast still wrote ANY -- **and the shipped C allocator uses exactly that encoding, so R52 was void for every heap object while being reported closed**. Both suites stayed green throughout. Corrected, plus the pre-existing RTL Destroy divergence closed in Sail's direction | **[FILE, COMMITTED]** `sail_tests/vc_r58_domain_writers.S` |
+| **R59** | Sail resets `owner_hart` on Populate, Populate-Fast and Destroy; the RTL's only dynamic write to that byte was the owner CLAIM, so a re-minted object inherited the previous occupant's owner -- **benign at MHARTID 0 and PERMANENT above it, because no instruction can clear the byte**. And `$veda_owner_claim_en` lacked `!domain_violation`, so a trapping Bind still claimed. R41's class on the third carried field | **[FILE, COMMITTED]** `sail_tests/vc_r59_owner_hart_reset.S`, `rtl/sim/veda_smoke_r59_owner_reset.S` |
 | **R51 CORRECTED** | its stated cause was wrong. `test_fixtures = false` does NOT disable region seeding (writes at `veda_regs.sail:1231-1242`, the guard opens at `:1530`). `p21_oda_crossing.S` measured nothing because its compartment declared `Length 0x40` while its terminating `ecall` sat one word past that window. Corrected to `0x200`, it runs and agrees on all seven words -- **the compartment crossing's first cross-layer coverage** | **[FILE, COMMITTED]** `difftest/probes/p21_oda_crossing.S` |
 
 ### Open, honestly
@@ -226,8 +227,8 @@ and `0 programs run` reads as a clean line rather than an outage.
 Current, through the fixed entry point, in a shell with no conda active:
 
 ```
-  Sail self-check   : 109/109 passed
-  RTL milestones    :  98/98  passed
+  Sail self-check   : 110/110 passed
+  RTL milestones    :  99/99  passed
   ACT4 conformance  :  51/51  passed
   Cross-layer diff  :  25/25  as expected
   VERDICT: all four suites ran and passed.

@@ -2503,9 +2503,22 @@
          // region case: ownership is the thing page-in is specified to
          // PRESERVE, so a stolen owner byte would survive the whole paging
          // cycle and outlive the fault that created it.
+         // R59: AND THE SAME ARGUMENT, UNAPPLIED, FOR THE DOMAIN GATE. The two
+         // terms above were added because a Bind refused for region or
+         // residency must not take ownership of what it was just refused. A
+         // DOMAIN-violating Bind was still claiming. The two predicates are
+         // independent, not exclusive -- $veda_bind_claim_en needs
+         // valid && owner_ok, $veda_domain_violation needs valid && !domain_ok
+         // -- and both hold for a valid, unowned object narrowed to another
+         // domain, so the owner byte was written by a TRAPPING instruction.
+         // Sail cannot do this: its veda_trap returns before any odt_write.
+         // Benign at MHARTID = 0, and NOT benign once R59's other half is
+         // considered -- an owner byte nothing resets is a permanent claim.
+         // Third instance of a class this signal already closed twice.
          $veda_owner_claim_en    = ($veda_bind_claim_en || $veda_rebind_claim_en)
                                     && !$veda_region_fault
-                                    && !$veda_residency_fault;
+                                    && !$veda_residency_fault
+                                    && !$veda_domain_violation;
          // Only consumed by the trailing raw \SV always_ff block below,
          // the same real reason $veda_odtpd_new_gen/etc. already needed
          // this (invisible to SandPiper's own TLV-level dependency
@@ -6755,9 +6768,16 @@
          // was copy-on-write -- without this, the new object would be born
          // copy-on-write and its first write would fault for no reason.
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_COW] <= 8'h00;
-         // R52: the creating compartment's domain, not VEDA_DOMAIN_ANY. This arm
-         // is Populate/Populate-Fast only -- Destroy's own arm still resets to
-         // ANY, which is right: a destroyed slot has no owner.
+         // R59: owner_hart RESET. Sail writes VEDA_OWNER_UNOWNED on Populate,
+         // Populate-Fast AND Destroy; this file's only dynamic write to byte
+         // +18 anywhere was the owner CLAIM, so a re-minted object INHERITED
+         // the previous occupant's owner. Benign while MHARTID is 0 and both
+         // values pass owner_ok -- and permanent the moment it is not, because
+         // no instruction in the ISA can clear the byte. R41's class applied
+         // to the third carried field: a Populate mints a NEW object and the
+         // previous occupant's ownership has no claim on it.
+         odt_mem[CPU_veda_odt_addr_a0+18] <= VEDA_OWNER_UNOWNED;
+         // R52: the creating compartment's domain, not VEDA_DOMAIN_ANY.
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= CPU_veda_creating_domain_a0[7:0];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= CPU_veda_creating_domain_a0[15:8];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, CPU_veda_creating_domain_a0[19:16]};
@@ -6894,6 +6914,8 @@
          // So the RTL's stale value was an ORACLE FOR THE DESTROYED SLOT'S
          // PREVIOUS OWNER, which is exactly the refusal-cause class R44 closed
          // for bind mode 0b11. Closed in Sail's direction, for both reasons.
+         // R59: and the same reset here -- a destroyed slot has no owner either.
+         odt_mem[CPU_veda_odt_addr_a0+18] <= VEDA_OWNER_UNOWNED;
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= VEDA_DOMAIN_ANY[7:0];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= VEDA_DOMAIN_ANY[15:8];
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, VEDA_DOMAIN_ANY[19:16]};
