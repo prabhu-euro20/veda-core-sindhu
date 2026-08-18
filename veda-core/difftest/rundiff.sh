@@ -11,12 +11,29 @@ set -uo pipefail
 # Now: 0 = agree, 1 = diverge, 2 = infrastructure failure. run_difftests.sh is
 # the thing that runs them all and holds the expected verdicts.
 D="$(cd "$(dirname "$0")" && pwd)"
+# R46: THIS HARNESS DID NOT RESOLVE ITS OWN TOOLCHAIN, and it is the only one of
+# the three that did not. `rtl/run_veda_smoke_test.sh:14-16` and
+# `run_security_trap.sh:31-33` both self-activate conda for iverilog; this file
+# took iverilog from whatever PATH the caller happened to have. So the entire
+# cross-layer differential suite ran only when a human had already activated
+# conda by hand, and reported `IVERILOG-FAIL` / exit 2 on all 21 probes
+# otherwise -- silently, because the aggregator printed the count and
+# `verification.sh` never read an exit code (R46(b)).
+#
+# Same defect class this file already hardened itself against twice (R29's
+# reach into a frozen sibling tree for the assembler; the committed
+# `sim_diff.vvp` nothing rebuilt): a harness whose answer depends on the
+# invoking shell rather than on the sources under test.
+if ! command -v iverilog >/dev/null 2>&1; then
+  source "$HOME/anaconda3/etc/profile.d/conda.sh"
+  conda activate base
+fi
 SRC="$1"; NAME="$(basename "${SRC%.S}")"
 # R29: the project's OWN toolchain, resolved from this file's location. The
 # hand-wired path this replaced reached into rva23-core, a frozen sibling
 # project, so this harness only ran on one machine.
 TC="$(cd "$D/../.." && pwd)/toolchain/riscv-collab-gcc/riscv/bin"
-SIM=/home/prabhu/veda-core-sindhu/toolchain/sail-riscv/build/c_emulator/sail_riscv_sim
+SIM="$(cd "$D/../.." && pwd)/toolchain/sail-riscv/build/c_emulator/sail_riscv_sim"
 # R24 (open half): the harness gets its OWN config, and that is the whole point.
 # The Sail-side fixture switch lives in a JSON, and the suites and this harness
 # cannot share one file if one needs fixtures ON and the other OFF. Sharing it
@@ -24,7 +41,11 @@ SIM=/home/prabhu/veda-core-sindhu/toolchain/sail-riscv/build/c_emulator/sail_ris
 # files, two values, and this harness -- which can now fail and is actually run
 # (R31) -- is what would notice them drifting.
 CFG="$D/veda_diff_sail.json"
-RTLSIM=/home/prabhu/veda-core-sindhu/veda-core/rtl/sim
+# R46: absolute paths, in a file whose own comment three lines up says the
+# toolchain is "resolved from this file's location". Both of these were
+# hardwired to one checkout, so a second clone of this repo would have measured
+# the first clone's simulator and the first clone's RTL.
+RTLSIM="$(cd "$D/.." && pwd)/rtl/sim"
 
 "$TC/riscv64-unknown-elf-as" -march=rv64i_zicsr -o "$D/$NAME.o" "$SRC" 2>"$D/$NAME.aserr" || { echo "ASM-FAIL $NAME"; cat "$D/$NAME.aserr"; exit 2; }
 "$TC/riscv64-unknown-elf-ld" -T "$D/diff.ld" -o "$D/$NAME.elf" "$D/$NAME.o" 2>/dev/null || { echo "LD-FAIL $NAME"; exit 2; }
