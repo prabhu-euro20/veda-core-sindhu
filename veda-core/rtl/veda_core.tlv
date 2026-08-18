@@ -2741,6 +2741,21 @@
                                           // fix in Sail: the populate did not trap.
                                           (!$veda_region_nameable ||
                                            !($priv || $veda_oda_authorized) || $veda_odt_retired ||
+                                           // R66: and refuse the Populate that cannot deliver a
+                                           // FRESH generation. $veda_odt_retired is computed from
+                                           // the OLD generation, so a slot at {valid, 0xFFFFFE}
+                                           // takes a Populate that saturates it and leaves retired
+                                           // still false; the NEXT Populate then passes, cannot
+                                           // bump, and writes a second incarnation at the SAME
+                                           // generation while the first one's capabilities are
+                                           // live. Measured on Sail: the old capability still read
+                                           // 0xABCD out of the frame the descriptor had abandoned.
+                                           // Page-out already refuses this state at :2869 with the
+                                           // stated principle -- if the invalidation mechanism
+                                           // cannot run, the operation depending on it must not
+                                           // proceed. Populate CREATES the state page-out defends
+                                           // against, and had no such term.
+                                           ($veda_odt_valid && ($veda_odt_gen == 24'hFFFFFF)) ||
                                            $veda_object_is_executing ||
                                            // R47: BOTH windows. The new one because this
                                            // instruction CREATES the authority; the old one

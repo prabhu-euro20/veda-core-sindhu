@@ -684,6 +684,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r65.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R65 stale-base authority)"
 vvp "$SIM/sim_r65.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r65_stale_base.hex" | tee -a "$RUNLOG"
 
+echo "==> R66: Compiling (a Populate must be able to deliver a fresh generation)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r66.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r66_gen_collision.sv"
+echo "==> Simulating (R66 generation collision)"
+vvp "$SIM/sim_r66.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r66_gen_collision.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"
