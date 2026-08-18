@@ -2776,11 +2776,27 @@
          $veda_setdom_in_window     = ($veda_setdom_new < {12'b0, RT_ENTRIES[7:0]});
          $veda_domain_not_nameable  = ($veda_setdom_new != VEDA_DOMAIN_ANY) &&
                                        !($veda_setdom_in_window && rt_valid[$veda_setdom_new[2:0]]);
+         // R65: a delegated actor may not authorize against a Base the object has
+         // LEFT. $veda_oda_denies_old tests old_entry.Base, and page-out preserves
+         // that Base as a value the model's own comment calls "stale, and
+         // unreachable" -- so for a paged-out object the window test asks about
+         // the frame the object has left and grants authority over the object it
+         // is. Measured end to end on Sail: a User actor whose ODA covered only
+         // victim_frame retargeted a paged-out object's domain, the pager restored
+         // it at a frame that ODA never covered, and the capability minted there.
+         //
+         // Machine is EXEMPT, deliberately, and this is the opposite of R62's
+         // choice for a stated reason: R62 gated WELL-FORMEDNESS, which applies to
+         // everyone; this gates the VALIDITY OF AN AUTHORITY TEST, and Machine is
+         // never window-tested at all.
+         $veda_stale_authority = !$priv && $veda_odt_valid && !$veda_odt_resident;
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
-                                           (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
+                                           ($veda_stale_authority ||
+                                           !($priv || $veda_oda_authorized) || !$veda_odt_valid ||
                                             $veda_oda_denies_old || $veda_domain_not_nameable);
          $veda_odt_set_cow_violation = $is_veda_odt_set_cow &&
-                                        (!($priv || $veda_oda_authorized) || !$veda_odt_valid ||
+                                        ($veda_stale_authority ||
+                                           !($priv || $veda_oda_authorized) || !$veda_odt_valid ||
                                          $veda_oda_denies_old);
          // R47 on Destroy is deliberately NOT gated on $veda_odt_valid, unlike
          // the two policy writes above. Destroy bumps the generation of an

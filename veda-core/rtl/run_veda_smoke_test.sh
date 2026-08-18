@@ -679,6 +679,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r64.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R64 fault object channel)"
 vvp "$SIM/sim_r64.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r64_fault_object.hex" | tee -a "$RUNLOG"
 
+echo "==> R65: Compiling (no policy write against a Base the object has left)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r65.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r65_stale_base.sv"
+echo "==> Simulating (R65 stale-base authority)"
+vvp "$SIM/sim_r65.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r65_stale_base.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"
