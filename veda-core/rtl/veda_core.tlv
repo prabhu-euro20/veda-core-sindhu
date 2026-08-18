@@ -2356,6 +2356,27 @@
          // and at fork() the parent holds exactly such a capability, which is
          // the first one that will be written.
          $veda_cow_write = $veda_check_odt_cow;
+         // ═══ R52 -- THE CREATION-TIME BINDING POLICY ═══════════════════════
+         // An object created INSIDE a compartment belongs to that compartment's
+         // domain; an object created in the ambient context stays open.
+         //
+         // The gate below has always worked. What was never decided was the
+         // DEFAULT, and every Populate wrote VEDA_DOMAIN_ANY -- so the gate
+         // never bit unless software explicitly narrowed an object, and
+         // measurement showed a callee needs only the NAME: given the integer
+         // alone, with the caller having untagged its own register first, it
+         // re-bound the caller's object and read it. Zero traps.
+         //
+         // THE AMBIENT ARM IS LOAD-BEARING, and it is what keeps R17's livelock
+         // closed. R17 forbade cross-domain Bind outright and was RETRACTED THE
+         // SAME DAY: a compartment's RETURN PATH is by construction in another
+         // domain, so a blanket rule makes compartments one-way and nothing can
+         // ever return. Here the boot/loader context's objects -- return paths,
+         // type authorities, shared services -- stay ANY and remain bindable
+         // from anywhere. Measured: a compartment in region 0 binding an
+         // ambient-created object still succeeds.
+         $veda_creating_domain[19:0] = ($veda_pcc_object == 44'b0) ? VEDA_DOMAIN_ANY
+                                                                   : $veda_pcc_object[43:24];
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
                                  ($veda_pcc_object == VEDA_OBJECT_NONE) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
@@ -6725,9 +6746,12 @@
          // was copy-on-write -- without this, the new object would be born
          // copy-on-write and its first write would fault for no reason.
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_COW] <= 8'h00;
-         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= VEDA_DOMAIN_ANY[7:0];
-         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= VEDA_DOMAIN_ANY[15:8];
-         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, VEDA_DOMAIN_ANY[19:16]};
+         // R52: the creating compartment's domain, not VEDA_DOMAIN_ANY. This arm
+         // is Populate/Populate-Fast only -- Destroy's own arm still resets to
+         // ANY, which is right: a destroyed slot has no owner.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= CPU_veda_creating_domain_a0[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= CPU_veda_creating_domain_a0[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, CPU_veda_creating_domain_a0[19:16]};
          // Layout, byte-aligned: Base +0..+6, Length +7..+11, Perms
          // +12..+13, generation +14..+16, valid +17, owner_hart +18, retired
          // +19, id_hi +20..+24, resident +25 (RTL-6, ODT_OFF_RESIDENT).

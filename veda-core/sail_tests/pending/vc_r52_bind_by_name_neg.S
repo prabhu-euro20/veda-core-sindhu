@@ -60,6 +60,23 @@ _start:
     # with a blanket cross-domain rule, and its retraction already named the
     # replacement: per-object policy plus an ODT field-write path. That path was
     # built. The policy was not.
+    #
+    # ═══ UPDATE: THE POLICY LANDED, AND THIS FILE IS STILL RED ON PURPOSE ═══
+    # Objects created inside a compartment now belong to that compartment's
+    # domain (see vc_r52_creation_domain.S, which demonstrates a region-1
+    # compartment's object being refused to a region-0 one while an
+    # ambient-created object still binds -- R17's return path intact).
+    #
+    # This file stays red because BOTH of its compartments are in REGION 0, and
+    # the gate compares owner_domain against veda_pcc_object[43 .. 24] -- the
+    # REGION. Two compartments in one region are ONE DOMAIN by design: R10 makes
+    # the region field of a code capability's Object_ID the unforgeable domain
+    # identity. So the machine is behaving exactly as specified here.
+    #
+    # What this file now waits on is re-graining the gate's SUBJECT from region
+    # to object, which needs a field wider than owner_domain's 20 bits to hold a
+    # 44-bit identity. That is a separate decision, and it is not the creation
+    # default this finding was originally about.
     la   t0, trap_handler
     csrw mtvec, t0
     li   s0, 0                      # trap count

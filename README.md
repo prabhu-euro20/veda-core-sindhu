@@ -170,7 +170,7 @@ output into a variable and never read an exit code, and it was measured exiting 
 self-activate conda). The exit code is now the verdict, plus a guard the exit code cannot give:
 every suite must report a **nonzero total**.
 
-- **Sail formal model: 107/107** self-checking tests.
+- **Sail formal model: 108/108** self-checking tests.
 - **RTL milestone smoke-test regression: 98/98**, zero regressions; per-milestone results live in
   `veda-core/rtl/`.
 - **RISC-V ACT4 RV64I conformance: 51/51**, zero regressions (run directly against

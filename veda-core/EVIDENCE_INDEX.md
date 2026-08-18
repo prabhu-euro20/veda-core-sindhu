@@ -185,6 +185,7 @@ are now entered. The register runs **R1..R56 with no gaps.**
 | **R54** | two `verification.sh` runs at once corrupt each other -- they share `rtl/sim/` and the difftest artifacts. **Measured on myself**: one run reported `51/51` RTL and `5/24` differential while the other reported the true `98/98` and `24/24`. R46's exit-code discipline is what refused to certify it. Now interlocked, so a second run is refused rather than merely visible | **[FILE, COMMITTED]** `verification.sh` |
 | **R55** | `veda.bind` minted a capability out of a region that had never been configured -- the model had TWO residency predicates and only the crossings' one checked `rt_valid`. **Measured with its control**: bind into region 3 `{rt_valid=0,resident=1}` gave 0 traps and TAG 1; bind into region 2 `{rt_valid=1,resident=0}` gave 1 trap and tag 0. The RTL was already right, so the SPECIFICATION was more permissive than the hardware | **[FILE, COMMITTED]** `sail_tests/vc_r55_bind_rt_valid_neg.S` |
 | **R56** | RT-Populate **decided against** as the next increment: two of its three justifications were false at source (R51's stated cause, and R52's grain), and the minimal version is a compartment escape on first execution -- regions 4..7 already alias region 0's base at reset on both layers. The region layout is disjoint only because the model truncates locals at 2^20; `region_entry` has no length | **[DESIGN_07 R56]** |
+| **R52 CLOSED** | the creation-time binding policy: an object created INSIDE a compartment belongs to that compartment's domain; ambient-created objects stay open. Two lines per layer, no new instruction. **The ambient arm is what keeps R17's retraction from repeating** -- demonstrated with the return-path control intact. Residual stated: the gate's subject is the REGION, so two compartments in one region remain one principal by R10's design | **[FILE, COMMITTED]** `sail_tests/vc_r52_creation_domain.S` |
 | **R51 CORRECTED** | its stated cause was wrong. `test_fixtures = false` does NOT disable region seeding (writes at `veda_regs.sail:1231-1242`, the guard opens at `:1530`). `p21_oda_crossing.S` measured nothing because its compartment declared `Length 0x40` while its terminating `ecall` sat one word past that window. Corrected to `0x200`, it runs and agrees on all seven words -- **the compartment crossing's first cross-layer coverage** | **[FILE, COMMITTED]** `difftest/probes/p21_oda_crossing.S` |
 
 ### Open, honestly
@@ -224,7 +225,7 @@ and `0 programs run` reads as a clean line rather than an outage.
 Current, through the fixed entry point, in a shell with no conda active:
 
 ```
-  Sail self-check   : 107/107 passed
+  Sail self-check   : 108/108 passed
   RTL milestones    :  98/98  passed
   ACT4 conformance  :  51/51  passed
   Cross-layer diff  :  25/25  as expected
