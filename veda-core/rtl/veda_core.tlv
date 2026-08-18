@@ -9,13 +9,16 @@
    //  the three real architectural calls this milestone required (the ODT
    //  is memory-mapped, not a register array; violations suppress writes
    //  rather than trap, since this core has no privileged/trap
-   //  infrastructure at all yet; the generation-staleness check is
+   //  infrastructure at all yet [MILESTONE 1 ONLY -- Milestone 9 built the
+   //  traps, and R36/R39 the standard privilege model. Violations trap now,
+   //  and this file carries mstatus/mtvec/mepc/mcause/mtval/mscratch];
+   //  the generation-staleness check is
    //  included from the start rather than reproducing a known, already-
    //  fixed Sail V-A gap).
    //
    //  All 50 RV64I encodings implemented (unchanged from the base core):
    //  the 38 RV32I-equivalent instructions (incl. FENCE and, as of RTL
-   //  Milestone 23, ECALL; EBREAK still excl./deferred) plus the 12
+   //  Milestone 23, ECALL, and as of R33d EBREAK) plus the 12
    //  RV64-only *W encodings.
    //
    //  Waveform signals to watch (add in Makerchip waveform panel):
@@ -1369,10 +1372,17 @@
          // literal comparison rather than field-by-field decode, the
          // simplest, least-ambiguous way to recognize one specific,
          // fully-fixed instruction word (no operand fields to extract at
-         // all, unlike CSRRW/CSRRS). This core has no privilege-level
-         // stack to restore (it's always effectively M-mode, matching
-         // $priv's own existing one-way-drop model) -- MRET here means
-         // exactly "PC = mepc", not a full mstatus.MPP/MPIE restore.
+         // all, unlike CSRRW/CSRRS).
+         //
+         // MILESTONE 9 WROTE, AND R36 FALSIFIED, the sentence that used to sit
+         // here: "this core has no privilege-level stack to restore (it's always
+         // effectively M-mode, matching $priv's own existing one-way-drop model)
+         // -- MRET here means exactly PC = mepc, not a full mstatus.MPP/MPIE
+         // restore." All three claims are now false, and the block eight lines
+         // below already contradicted it -- a live contradiction inside one
+         // screen, left behind by the increment that created the second half.
+         // MRET IS A REAL TRAP RETURN: privilege = mstatus.MPP, MIE = MPIE, and
+         // an MRET below Machine is an illegal instruction.
          $is_mret = ($instr == 32'h30200073);
          // R36: every EFFECT of MRET -- the PC redirect, the PCC/MEPCC restore,
          // the region restore, the trap-depth decrement -- hangs off this, not
@@ -1393,7 +1403,8 @@
          // violation signal into the existing $veda_trap_taken
          // OR-chain... Doing so would automatically and correctly get
          // PCC-reset for free, by construction" (MILESTONE_21_RESULTS.md).
-         // EBREAK remains deferred -- not added here.
+         // EBREAK was deferred when this line was written; R33d added it 20
+         // lines below, so read this as history rather than as scope.
          $is_ecall = ($instr == 32'h00000073);
          // ═══════════════════════════════════════════════════════════════════
          //  R33d -- EBREAK, 0x00100073, differing from ECALL only in bit 20.
@@ -2571,8 +2582,11 @@
          //  Populate's and Destroy's PRE-EXISTING gates (privilege, ODA
          //  authority, retired) refuse SILENTLY here: they suppress the ODT
          //  write and the rd write and raise nothing. veda_smoke_m4_neg.S
-         //  and veda_smoke_m11_neg.S both depend on exactly that -- they
-         //  droppriv, populate, and keep executing. Sail raises
+         //  and veda_smoke_m11_neg.S both depend on exactly that -- they drop
+         //  privilege, populate, and keep executing. (They dropped it with
+         //  veda.droppriv when this was written; R36 retired that instruction
+         //  and both now use VEDA_DROP_TO_USER -- mstatus.MPP then mret. The
+         //  dependency is unchanged.) Sail raises
          //  Illegal_Instruction for those same gates, so the two layers
          //  already disagree about SIGNALLING here; that divergence predates
          //  this increment and is recorded separately rather than silently
@@ -5601,8 +5615,8 @@
                               //  WHAT IT GRANTED, stated at its real size. This
                               //  register supplies Length and Perms to
                               //  Populate-Fast (veda_attr[55:16] | [15:0]). It
-                              //  is not itself a mint. But a principal after
-                              //  veda.droppriv -- holding neither privilege nor
+                              //  is not itself a mint. But a principal running below
+                              //  Machine -- holding neither privilege nor
                               //  a tagged ODA -- could CHOOSE THE LENGTH AND
                               //  PERMS OF AN OBJECT A LATER PRIVILEGED
                               //  POPULATE-FAST WILL MINT. Control over the
@@ -5627,8 +5641,16 @@
                               //  out. Recorded rather than shipped.
                               //
                               //  Measured before editing: NO test in the corpus
-                              //  writes 0x7C4 after veda.droppriv, so the
-                              //  privilege half costs nothing.
+                              //  wrote 0x7C4 after a privilege drop, so the
+                              //  privilege half cost nothing. THAT IS NOW
+                              //  INVERTED, and deliberately:
+                              //  veda_smoke_r35_attr_priv.S drops to User and
+                              //  then writes 0x7C4 as its central NEGATIVE
+                              //  assertion, so this gate is the subject of a
+                              //  test rather than free. Left corrected rather
+                              //  than deleted because "no test covers this" is
+                              //  exactly the sentence a later reader would
+                              //  trust without re-checking.
                               // ═══════════════════════════════════════════
                               (>>1$csr_write_en && >>1$csr_is_veda_attr && >>1$priv) ? >>1$csr_wdata[63:0] :
                                                                             >>1$veda_attr;
@@ -5651,7 +5673,7 @@
                               // else if cur_privilege == Machine then veda_mode = ...`, so a
                               // non-Machine write is a silent no-op that leaves the register
                               // unchanged. This layer checked only the PCC-bounds half, so a
-                              // post-droppriv, unbounded-PCC principal could clear purecap here
+                              // a below-Machine, unbounded-PCC principal could clear purecap here
                               // while being refused at Populate (:2281, which does carry $priv).
                               // Gating the write-enable rather than raising a violation is the
                               // exact parity choice -- Sail neither traps nor writes.

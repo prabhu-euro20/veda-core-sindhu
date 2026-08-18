@@ -16,7 +16,15 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/security_trap_demo"
-ROOT=/home/prabhu/makerchip/rva23-core
+# THE ROOT USED TO BE HARDWIRED to /home/prabhu/makerchip/rva23-core, and here
+# that was worse than a borrowed toolchain path. Line 75 below transpiles
+# "$ROOT/veda-core/rtl/veda_core.tlv" -- so the SECURITY DEMONSTRATION was
+# building and running the FROZEN sibling tree's RTL, a core missing every
+# increment through R38(b)/R40/R41. The demo that exists to show what this
+# machine refuses was measuring a different, older machine. Same class as
+# verification.sh's own root and as the toolchain path rundiff.sh had to stop
+# reaching across for (R29). It resolves its own location now.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
 TC="$ROOT/toolchain/riscv-collab-gcc/riscv/bin"
 export PATH="$PATH:$HOME/.local/bin"
 

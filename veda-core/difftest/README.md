@@ -25,23 +25,51 @@ range out of `elfmem[]` in the identical 32-bit little-endian format.
       word sail       rtl
       4    00000000   00001004     <-- DIFFERS
 
-It asserts nothing. **Divergence is the finding, not failure.**
+**THAT SENTENCE USED TO SAY "It asserts nothing. Divergence is the finding, not
+failure." IT IS NO LONGER TRUE, AND THE CHANGE IS THE POINT.** `rundiff.sh`'s exit
+code is now the verdict -- 0 agree, 1 diverge, 2 infrastructure failure -- because
+a comparator that could not fail, and that nothing invoked, was a script rather
+than verification (R31).
 
-## Building the RTL side
+## The entry point, which this file never named
 
-    iverilog -g2012 -I ../rtl/sim -o sim_diff.vvp ../rtl/sim/veda_core.sv tb_diff.sv
+    ./run_difftests.sh
 
-`veda_core.sv` is the SandPiper output; regenerate it with the smoke runner
-first if `veda_core.tlv` has changed.
+**That** is what runs the suite. It holds the EXPECTED VERDICT for every probe and
+fails in both directions: an expected-AGREE probe that diverges, and an
+expected-DIVERGE probe that starts agreeing without anyone updating the record. A
+probe known to diverge is listed as DIVERGE with its reason rather than hidden
+behind an all-must-agree suite. Current state: **20/20 as expected.**
+
+`./rundiff.sh probes/<name>.S` runs one probe and prints the word-by-word
+comparison above -- useful while writing one, not the suite.
+
+## Building the RTL side -- you do not
+
+`rundiff.sh` rebuilds `sim_diff.vvp` from `veda_core.sv` on every run, and it
+**hard-refuses with FATAL** if `veda_core.sv` is missing or older than
+`veda_core.tlv`. Hand-building it is work the harness undoes, and worse, a reader
+can take a successful hand-build as a substitute for re-running the smoke runner --
+which is exactly the staleness the guard exists to prevent. If the harness tells
+you the transpiled output is stale, run `../rtl/run_veda_smoke_test.sh`; do not
+build around it.
 
 ## Writing a probe -- one hard constraint
 
-**The two layers seed DIFFERENT capability registers at reset.** Sail seeds
-c10-c14; the RTL seeds a different set with different contents. A probe that
-reads a seeded register is not comparing the same thing on both sides, and will
-report a divergence that is a fixture difference rather than a defect. Probes
-should bind what they need, and treat any divergence involving c10-c14 as
-suspect until the fixtures are reconciled.
+**CLOSED BY R24, AND LEAVING THIS SECTION AS IT WAS WOULD BE THE MOST HARMFUL LINE
+IN THE FILE.** It used to read: "The two layers seed DIFFERENT capability registers
+at reset... treat any divergence involving c10-c14 as suspect until the fixtures
+are reconciled." That told probe authors to **discount exactly the class of
+divergence that would today be a real defect.**
 
-Reconciling those fixtures is worth doing on its own: two layers that do not
-agree on their reset state cannot be compared on any test that touches it.
+Both layers now have a defined architectural reset -- `veda_reset_crf()` zeroes all
+sixteen registers and clears the tags -- and the seeded fixtures are gated OFF that
+reset on both sides, off by default, with this harness passing neither. `p_reset_crf.S`
+records the agreement probe by probe.
+
+**So the constraint for a probe author is the opposite one now:** a divergence in
+any capability register, c10-c14 included, is a finding until proven otherwise.
+Probes should still bind what they need rather than lean on reset state, because a
+probe that depends on a fixture is measuring the fixture -- a mistake this corpus
+has made three times, most recently in a draft that read a seeded tag and drew the
+opposite conclusion.
