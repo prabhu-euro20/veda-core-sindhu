@@ -2574,8 +2574,53 @@
                                        ($veda_object_id[7:0]   == $veda_pcc_object[7:0]);
          $veda_object_slot_is_mepcc = ($veda_object_id[43:24] == $veda_mepcc_object[43:24]) &&
                                        ($veda_object_id[7:0]   == $veda_mepcc_object[7:0]);
+         // ═══ R45 -- THE PIN COMPARED NAMES WHILE ITS PROPERTY IS MEMORY ═══
+         //
+         // The slot compare above subsumes the name compare, and both are still
+         // only about IDENTITY. Nothing in this design makes two Object_IDs
+         // disjoint -- Populate takes Base verbatim and no overlap test exists
+         // anywhere -- so a SECOND name at the running code's own Base walked
+         // straight past it. Measured on the model first:
+         // sail_tests/vc_r45_odt_alias_neg.S populated an alias before entering a
+         // compartment and evicted it from inside; the pin compared 813 against
+         // 810 and passed.
+         //
+         // Enforcing disjointness at Populate would mean testing a new window
+         // against every live entry, which is not a hardware operation. The pin
+         // does not need that: it needs ONE window, the one being executed, and
+         // that is two live registers. One range overlap, O(1).
+         //
+         // 57 BITS, not 56. Base is 56 and Length is 40, so the sum needs 57 --
+         // R18 was a bounds check that wrapped at its own width and let an access
+         // land below its object. The same mistake is available here.
+         //
+         // GATED ON A BOUNDED COMPARTMENT, and the first draft was refuted without
+         // it by the corpus's own over-refusal control: an UNBOUNDED PCC overlaps
+         // every window, so the arm refused every eviction on the machine. An
+         // unbounded PCC describes no region, so the window test degenerates
+         // rather than being conservative, and R26 already settled that the NAME
+         // is the trustworthy predicate there. The residual is stated in the Sail
+         // twin rather than hidden.
+         $veda_pin_tgt_lo[56:0]  = {1'b0, $veda_odt_base};
+         $veda_pin_tgt_hi[56:0]  = {1'b0, $veda_odt_base} + {17'b0, $veda_odt_length};
+         $veda_pin_pcc_lo[56:0]  = {1'b0, $veda_pcc_base};
+         $veda_pin_pcc_hi[56:0]  = {1'b0, $veda_pcc_base} + {17'b0, $veda_pcc_length};
+         $veda_pin_mep_lo[56:0]  = {1'b0, $veda_mepcc_base};
+         $veda_pin_mep_hi[56:0]  = {1'b0, $veda_mepcc_base} + {17'b0, $veda_mepcc_length};
+         $veda_pin_win_is_pcc = $veda_odt_valid &&
+                                ($veda_pcc_object != VEDA_OBJECT_NONE) &&
+                                ($veda_pcc_length != 40'hFFFFFFFFFF) &&
+                                ($veda_pin_tgt_lo < $veda_pin_pcc_hi) &&
+                                ($veda_pin_pcc_lo < $veda_pin_tgt_hi);
+         $veda_pin_win_is_mepcc = $veda_odt_valid &&
+                                  ($veda_trap_depth != 8'b0) &&
+                                  ($veda_mepcc_object != VEDA_OBJECT_NONE) &&
+                                  ($veda_mepcc_length != 40'hFFFFFFFFFF) &&
+                                  ($veda_pin_tgt_lo < $veda_pin_mep_hi) &&
+                                  ($veda_pin_mep_lo < $veda_pin_tgt_hi);
          $veda_object_is_executing = $veda_object_slot_is_pcc ||
-                                      (($veda_trap_depth != 8'b0) && $veda_object_slot_is_mepcc);
+                                      (($veda_trap_depth != 8'b0) && $veda_object_slot_is_mepcc) ||
+                                      $veda_pin_win_is_pcc || $veda_pin_win_is_mepcc;
          //  THE PIN REFUSAL IS A SEPARATE SIGNAL FROM THE GATES IT JOINS,
          //  and that split is deliberate rather than tidiness.
          //
