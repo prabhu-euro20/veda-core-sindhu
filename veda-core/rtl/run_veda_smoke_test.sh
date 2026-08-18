@@ -674,6 +674,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r63.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R63 region write alias)"
 vvp "$SIM/sim_r63.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r63_region_write_alias.hex" | tee -a "$RUNLOG"
 
+echo "==> R64: Compiling (the bind-side fault-identification channel, CSR 0x7C9)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r64.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r64_fault_object.sv"
+echo "==> Simulating (R64 fault object channel)"
+vvp "$SIM/sim_r64.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r64_fault_object.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

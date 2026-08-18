@@ -1366,6 +1366,11 @@
          // software it constrains. It is also the only channel by which a
          // handler can learn WHY a return was denied.
          $csr_is_veda_trap_status    = ($csr_addr == 12'h7C8);
+         // R64: the bind-side fault-identification channel. DESIGN_02:293-297
+         // asked for it in its own words and said it belongs BEFORE `backing`
+         // is designed. Read-only, like its three neighbours, and for the same
+         // reason: a writable fault-report register is a forgeable one.
+         $csr_is_veda_mfaultobj      = ($csr_addr == 12'h7C9);
 
          // MRET: the one, fixed 32-bit encoding (funct12=0b001100000010,
          // rs1=rd=0, funct3=0, opcode=SYSTEM) -- matched as a single
@@ -5207,9 +5212,10 @@
                            $csr_is_mtval || $csr_is_veda_pcc_base || $csr_is_veda_pcc_length ||
                            $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
                            $csr_is_veda_attr || $csr_is_veda_mode || $csr_is_veda_current_region ||
-                           $csr_is_veda_saved_region || $csr_is_veda_trap_status;
+                           $csr_is_veda_saved_region || $csr_is_veda_trap_status ||
+                           $csr_is_veda_mfaultobj;
          $csr_is_readonly = $csr_is_veda_current_region || $csr_is_veda_saved_region ||
-                            $csr_is_veda_trap_status;
+                            $csr_is_veda_trap_status || $csr_is_veda_mfaultobj;
          $veda_csr_undef = $is_csr_access && (!$csr_addr_known || ($csr_write_en && $csr_is_readonly));
 
          // ═══════════════════════════════════════════════════════════════════
@@ -5375,6 +5381,7 @@
                              $csr_is_veda_current_region ? {44'b0, $veda_current_region} :
                              $csr_is_veda_saved_region   ? {44'b0, $veda_saved_region} :
                              $csr_is_veda_trap_status    ? {55'b0, $veda_trap_poison, $veda_trap_depth} :
+                             $csr_is_veda_mfaultobj      ? {20'b0, $veda_mfaultobj} :
                                               64'b0;
          // CSRRS with rs1=x0 must not write the CSR at all (real
          // RISC-V's own rule, VEDA_CORE... no -- the base Zicsr spec
@@ -5804,6 +5811,21 @@
          //  saved" indistinguishable from "region 0 saved", the restore
          //  would fire on every mret, and on this all-region-0 corpus it
          //  would look perfectly correct forever.
+         //  R64: the faulting object's name. Sail needs TWO registers here --
+         //  the name and a "was anything staged this trap" flag -- because its
+         //  trap helper runs before the chokepoint and cannot see the outcome.
+         //  The RTL sees both facts in the same cycle, so ONE mux expresses the
+         //  whole discipline: a bind-family trap stages the object, ANY OTHER
+         //  trap writes the sentinel. Reset is the SENTINEL and not zero --
+         //  object 0 is a legal name, so a zero reset would make "nothing
+         //  faulted" and "object 0 faulted" the same reading. That is R10's
+         //  argument for the CRBR's out-of-window sentinel, and the Sail half
+         //  got it wrong on its first attempt and its own test caught it.
+         $veda_bind_family_trap = >>1$is_veda_bind_plain || >>1$is_veda_bind_notrap || >>1$is_veda_rebind;
+         $veda_mfaultobj[43:0] = $reset ? 44'hFFFFFFFFFFF :
+                                  (>>1$veda_trap_taken && $veda_bind_family_trap) ? >>1$veda_object_id :
+                                  (>>1$veda_trap_taken) ? 44'hFFFFFFFFFFF :
+                                                          >>1$veda_mfaultobj;
          $veda_saved_region[19:0] = $reset ? 20'hFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_current_region != 20'b0)) ? >>1$veda_current_region :
                                      (>>1$mret_ok && (>>1$veda_saved_region != 20'hFFFFF)) ? 20'hFFFFF :
