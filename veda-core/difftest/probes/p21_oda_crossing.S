@@ -1,35 +1,3 @@
-# ═══ BLOCKED, NOT DELETED -- AND THE REASON IS ITSELF A FINDING (R51) ═══════
-#
-# This probe measured NOTHING and reported AGREE. Both layers wrote eight zero
-# words, because neither ever reached the stores: the OCInvoke at its centre
-# cannot succeed in this harness at all.
-#
-# WHY. VEDA_OCINVOKE requires the target domain's region to be RT-resident
-# (R10). The region table is written by exactly one thing in the entire model
-# -- veda_test_seed_odt(), the TEST FIXTURE function. There is no RT-Populate
-# instruction; DESIGN_08's region mechanism has NO SOFTWARE-VISIBLE WRITE PATH.
-# The differential harness deliberately runs with test_fixtures FALSE (R24, so
-# that the suites and the harness cannot share a drift channel), so no region
-# is ever valid or resident here, and every OCInvoke REGION_FAULTs.
-#
-# CONSEQUENCE, and it is bigger than this file: THE COMPARTMENT CROSSING HAS
-# NEVER BEEN DIFFERENTIALLY TESTED. This probe is the first in the suite's
-# history to attempt an OCInvoke -- verified by grepping every probe for the
-# encoding. The architecture's central isolation mechanism has no cross-layer
-# coverage, and could not have any until the region table is writable by
-# something other than a fixture.
-#
-# IT IS KEPT, NOT DELETED, because it is ready to run the day that changes --
-# and because a probe that reports AGREE on eight zero words is exactly the
-# blindness this project has now found six times (p5_reserved counting traps
-# without reading mcause; veda_smoke_m11 pinning an escape as its contract).
-# Leaving it in probes/ unlisted would have made it a dark test, which is R49.
-# run_difftests.sh now REFUSES to run if any file in probes/ is missing from
-# its expected-verdict table, so neither failure mode can recur silently.
-#
-# R48's evidence lives instead in sail_tests/vc_r48_oda_inherit_neg.S (Sail,
-# fixtures on) and rtl/sim/veda_smoke_r48_oda_crossing.S (RTL, fixtures on).
-#
 .section .text
 .global _start
 # R48 -- A CALLEE COMPARTMENT INHERITED THE CALLER'S ODA ACROSS OCInvoke.
@@ -87,7 +55,21 @@ _start:
     # ─── the compartment fixture ──────────────────────────────────────────
     la   x3, callee_entry
     slli x3, x3, 32
-    li   x4, 0x00400402                    # Len 0x40, Perms EXECUTE|INVOKE
+    # LENGTH 0x200, NOT 0x40, AND THE 0x40 IS WHY THIS PROBE MEASURED NOTHING.
+    # callee_entry lands at 0x8000010c and the compartment's terminating ecall at
+    # 0x8000014c -- exactly ONE WORD past a 0x40 window, so it could never be
+    # fetched and the probe never reached its stores. Both layers agreed on
+    # eight zero words and the verdict line still said AGREE.
+    #
+    # The sibling that gets this right warns about it in as many words:
+    # sail_tests/vc_r10_crbr_invoke_trap_return.S sizes its compartment 0x200
+    # "so the resume-after-trap sequence that runs inside the compartment is
+    # covered". This probe did not, and the diagnosis first recorded for it --
+    # that the differential harness has no resident region -- was WRONG:
+    # veda_regs.sail seeds the region table at :1231-1242, ABOVE the
+    # `if veda_test_fixtures` guard that only opens at :1530, so regions 0 and 1
+    # are valid and resident here regardless of the fixture switch.
+    li   x4, 0x02000402                    # Len 0x200, Perms EXECUTE|INVOKE
     or   x2, x3, x4
     li   x1, 122
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2    # CODE

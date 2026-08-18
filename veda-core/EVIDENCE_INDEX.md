@@ -146,7 +146,7 @@ four labels.
 
 ---
 
-## ADDENDUM -- 2026-08-18 hardening pass (R36 through R54)
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R56)
 
 **Appended rather than merged into the 2026-07-28 index above, which is a snapshot
 of its own pass and stays intact.** Same legend. Every count here was produced by
@@ -169,7 +169,7 @@ the run recorded at the bottom of this section, not recalled.
 three repositories and in every commit message, then differencing against the
 `###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
 them were shipped, verified hardware fixes**, two of exploitable class. All four
-are now entered. The register runs **R1..R54 with no gaps.**
+are now entered. The register runs **R1..R56 with no gaps.**
 
 | **R44** | `veda.bind` mode `0b11` (`VEDA_BIND_RESERVED`) is refused at DECODE on both layers. It used to reach Sail's `Illegal_Instruction` arm only after three ODT-state-dependent traps had had their chance, so the refusal CAUSE for an unallocated encoding was an ODT oracle | **[FILE, COMMITTED]** `difftest/probes/p19_bind_reserved_mode.S` |
 | **R45** | the executing-object pin compares MEMORY, not names. Two Object_IDs may still legally name one range -- SLAB-CARVE mints children inside a parent by construction -- but an alias is no longer a handle for evicting the code a compartment is running | **[FILE, COMMITTED]** `sail_tests/vc_r45_odt_alias_neg.S` |
@@ -183,6 +183,9 @@ are now entered. The register runs **R1..R54 with no gaps.**
 | **R52** | **[OPEN, MEASURED]** a callee needs only the NAME: given the integer alone, with the caller having untagged its own register first, it re-Bound the caller's private object and read it -- zero traps. Control: with `owner_domain` actually set, 2 traps and nothing read. The gate is sound; its DEFAULT is open, and that makes clearing registers at the crossing theatre | **[MEASURED, NOT FIXED]** DESIGN_07 R52 |
 | **R53** | CSetBounds was computed at the PRE-WIDENING widths on the RTL -- Base 32, Length 16 -- and the window check validated the TRUNCATED request. **Measured**: a request of `0x10000` gave `0x00010000` on Sail and `0x00000000` on the RTL, with both controls agreeing. Now 56/40, and the check is 65 bits wide because at 64 a huge request wraps and passes | **[FILE, COMMITTED]** `difftest/probes/p22_csetbounds_width.S` |
 | **R54** | two `verification.sh` runs at once corrupt each other -- they share `rtl/sim/` and the difftest artifacts. **Measured on myself**: one run reported `51/51` RTL and `5/24` differential while the other reported the true `98/98` and `24/24`. R46's exit-code discipline is what refused to certify it. Now interlocked, so a second run is refused rather than merely visible | **[FILE, COMMITTED]** `verification.sh` |
+| **R55** | `veda.bind` minted a capability out of a region that had never been configured -- the model had TWO residency predicates and only the crossings' one checked `rt_valid`. **Measured with its control**: bind into region 3 `{rt_valid=0,resident=1}` gave 0 traps and TAG 1; bind into region 2 `{rt_valid=1,resident=0}` gave 1 trap and tag 0. The RTL was already right, so the SPECIFICATION was more permissive than the hardware | **[FILE, COMMITTED]** `sail_tests/vc_r55_bind_rt_valid_neg.S` |
+| **R56** | RT-Populate **decided against** as the next increment: two of its three justifications were false at source (R51's stated cause, and R52's grain), and the minimal version is a compartment escape on first execution -- regions 4..7 already alias region 0's base at reset on both layers. The region layout is disjoint only because the model truncates locals at 2^20; `region_entry` has no length | **[DESIGN_07 R56]** |
+| **R51 CORRECTED** | its stated cause was wrong. `test_fixtures = false` does NOT disable region seeding (writes at `veda_regs.sail:1231-1242`, the guard opens at `:1530`). `p21_oda_crossing.S` measured nothing because its compartment declared `Length 0x40` while its terminating `ecall` sat one word past that window. Corrected to `0x200`, it runs and agrees on all seven words -- **the compartment crossing's first cross-layer coverage** | **[FILE, COMMITTED]** `difftest/probes/p21_oda_crossing.S` |
 
 ### Open, honestly
 
@@ -221,9 +224,9 @@ and `0 programs run` reads as a clean line rather than an outage.
 Current, through the fixed entry point, in a shell with no conda active:
 
 ```
-  Sail self-check   : 106/106 passed
+  Sail self-check   : 107/107 passed
   RTL milestones    :  98/98  passed
   ACT4 conformance  :  51/51  passed
-  Cross-layer diff  :  24/24  as expected
+  Cross-layer diff  :  25/25  as expected
   VERDICT: all four suites ran and passed.
 ```

@@ -39,7 +39,7 @@ than verification (R31).
 fails in both directions: an expected-AGREE probe that diverges, and an
 expected-DIVERGE probe that starts agreeing without anyone updating the record. A
 probe known to diverge is listed as DIVERGE with its reason rather than hidden
-behind an all-must-agree suite. Current state: **24/24 as expected.**
+behind an all-must-agree suite. Current state: **25/25 as expected.**
 
 `./rundiff.sh probes/<name>.S` runs one probe and prints the word-by-word
 comparison above -- useful while writing one, not the suite.

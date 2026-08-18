@@ -43,6 +43,7 @@ p19_bind_reserved_mode.S AGREE     R44 CLOSED: bind mode 0b11 refused at DECODE 
 p20_oda_scope.S         AGREE      R47 CLOSED: the ODA's window is load-bearing on the delegated path
 p22_csetbounds_width.S  AGREE      R53 CLOSED: CSetBounds is computed at the widened widths on both layers
 p23_oclear.S            AGREE      R50 increment 1: OCLEAR zeroes the VALUE, keeps otype UNSEALED
+p21_oda_crossing.S      AGREE      R48 CLOSED cross-layer: the ODA is cleared at every crossing
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -353,3 +354,29 @@ echo "$pass/$((pass+fail)) as expected"
 # only) and then stored through it. Both layers AGREED on that failure -- w5 was
 # 0 on Sail and x on the RTL, w7 counted a trap -- and the verdict line still
 # said AGREE. Caught by reading the signature word by word. Eighth instance.
+
+# p21_oda_crossing -- R48, and READ ITS HISTORY BEFORE TRUSTING ANY DIAGNOSIS OF
+# IT. This probe first reported AGREE while both layers wrote EIGHT ZERO WORDS,
+# and the reason recorded for that at the time was WRONG. The recorded reason was
+# that the differential harness runs with test_fixtures false so no region is
+# resident and every OCInvoke REGION_FAULTs. That is false at source:
+# veda_regs.sail seeds the region table at :1231-1242, ABOVE the
+# `if veda_test_fixtures` guard that only opens at :1530, so regions 0 and 1 are
+# valid and resident here regardless of the switch.
+#
+# The real cause was one immediate in this file. callee_entry lands at
+# 0x8000010c and the compartment's terminating ecall at 0x8000014c -- exactly
+# ONE WORD past the 0x40 window the code object declared, so it could never be
+# fetched. Its sibling vc_r10_crbr_invoke_trap_return.S sizes its compartment
+# 0x200 and says why. Corrected to 0x200, this probe measures.
+#
+# w3 and w5 are the over-refusal controls and they are the point: w3 is the
+# callee doing its own legitimate work through the IDC it was handed (a layer
+# that broke OCInvoke, or trapped everything after any crossing, gets w0/w1 right
+# and fails here), and w5 is Machine re-delegating and User minting again -- the
+# only word that shows the clear is a clear rather than a poisoning.
+#
+# THE COMPARTMENT CROSSING HAD NEVER BEEN DIFFERENTIALLY TESTED BEFORE THIS
+# PROBE RAN. That part of the original diagnosis was right, and it was true for
+# the mundane reason that nobody had written a probe that crossed -- not for the
+# architectural reason recorded alongside it.
