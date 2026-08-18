@@ -46,7 +46,7 @@ _start:
     // Mint Object_ID 20: Base=0x80010200 (32-byte aligned), Length=0x0030 (48),
     // Perms=0x000C (Permit_Load | Permit_Store).
     li   x1, 20
-    li   x2, 0x800102000030000C       // {Base[31:0], Length[15:0], Perms[15:0]}
+    li   x2, 0x800102000030003C       // {Base[31:0], Length[15:0], Perms[15:0]} -- R40: +LoadCap|StoreCap, this is an OCS.C container
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2
 
     li   x1, 20

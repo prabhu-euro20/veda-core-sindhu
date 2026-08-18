@@ -8,7 +8,7 @@ _start:
     .insn r 0x5b, 0x1, 0x0a, x1, x0, x2  # oca c1, c0, x2   (c1.Offset = 0x10)
     .insn r 0x5b, 0x0, 0x00, x10, x1, x0  # cgetbase   x10, c1  -- expect 0x80010000
     .insn r 0x5b, 0x0, 0x01, x11, x1, x0  # cgetlen    x11, c1  -- expect 0x40
-    .insn r 0x5b, 0x0, 0x02, x12, x1, x0  # cgetperm   x12, c1  -- expect 0x100C
+    .insn r 0x5b, 0x0, 0x02, x12, x1, x0  # cgetperm   x12, c1  -- expect 0x103C (R40: +Load/Store_Capability)
     .insn r 0x5b, 0x0, 0x03, x13, x1, x0  # cgettag    x13, c1  -- expect 1
     .insn r 0x5b, 0x0, 0x04, x14, x1, x0  # cgettype   x14, c1  -- expect 0xFFFF
     .insn r 0x5b, 0x0, 0x05, x15, x1, x0  # cgetaddr   x15, c1  -- expect 0x80010010
@@ -17,7 +17,7 @@ _start:
     bne  x10, x20, fail
     li   x20, 0x40
     bne  x11, x20, fail
-    li   x20, 0x100C
+    li   x20, 0x103C                      # R40: the scratch fixture gained bits 4 and 5
     bne  x12, x20, fail
     li   x20, 1
     bne  x13, x20, fail

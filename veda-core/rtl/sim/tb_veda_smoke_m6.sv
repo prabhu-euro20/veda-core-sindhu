@@ -42,7 +42,7 @@ module tb;
     $display("sealed-use trap correctly caught: x25=0x%0h (must be 0x600D -- real handler ran to completion)", dut.CPU_Xreg_val_a0[25]);
 
     if (dut.CPU_Xreg_val_a0[10] == 64'h1 && dut.CPU_Xreg_val_a0[11] == 64'h0 &&
-        dut.CPU_Xreg_val_a0[12] == 64'h80010000 && dut.CPU_Xreg_val_a0[13] == 64'h100C &&
+        dut.CPU_Xreg_val_a0[12] == 64'h80010000 && dut.CPU_Xreg_val_a0[13] == 64'h103C &&
         dut.CPU_Xreg_val_a0[20] == 64'hDEAD &&
         dut.CPU_Xreg_val_a0[24] == 64'h1 &&
         dut.CPU_Xreg_val_a0[21] == 64'hABCD1234ABCD5678 &&

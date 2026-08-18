@@ -37,6 +37,7 @@ p13_scr_reset.S         AGREE      R37 CLOSED: the three Special Capability Regi
 p14_cow_eligibility.S   AGREE      R38: the COW fault asks WHETHER, never WHO. Both layers
 p15_priv_model.S        AGREE      R36/R39 CLOSED: the two layers finally share a privilege
 p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so the previous
+p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STORE_CAPABILITY are
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -47,6 +48,16 @@ p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so
 #                                  has no principal who held store when it became cow. No probe had
 #                                  ever composed Populate with set.cow, which is how a two-field
 #                                  divergence sat inside a harness reporting 16/16.
+#
+# p17_cap_perm_flow: enforced on both layers at OCL.C/OCS.C -- the only two
+# instructions that move AUTHORITY through memory. Before R40 a delegation
+# attenuated to data-only with CAndPerm could still lift a live, tagged
+# capability out of the bytes it was allowed to read, gaining authority over an
+# object it was never given. The probe carries a positive control (the owner CAN
+# spill and reload) so a layer that simply refused OCL.C outright could not pass
+# it, and it records the refusal's cap_idx as the DEREFERENCED capability rather
+# than the destination -- the distinction that a bisection caught in the first
+# draft of the Sail test's expected value.
 #                                  mechanism, so privileged behaviour can be compared at all
 #                                  -- p13's own header recorded that it could not be. MPP,
 #                                  the U-mode CSR refusal and its cause, MRET-below-Machine,

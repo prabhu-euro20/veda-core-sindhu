@@ -28,7 +28,7 @@ _start:
     # ---- TCM-scratch target: Object_ID=201, Base=TCM_SCRATCH_BASE=0xA0000000 ----
     li   t0, 0xA0000000
     slli t0, t0, 32
-    li   t1, 0x0040000C                 # Length=0x40, Perms=Load|Store
+    li   t1, 0x0040003C                 # Length=0x40, Perms=Load|Store|LoadCap|StoreCap (R40)
     or   t0, t0, t1
     li   x1, 201
     mv   x2, t0
@@ -39,7 +39,7 @@ _start:
     # ---- DRAM/elfmem target: Object_ID=202, Base=0x80020000 (far outside this program) ----
     li   t0, 0x80020000
     slli t0, t0, 32
-    li   t1, 0x0040000C                 # Length=0x40, Perms=Load|Store
+    li   t1, 0x0040003C                 # Length=0x40, Perms=Load|Store|LoadCap|StoreCap (R40)
     or   t0, t0, t1
     li   x1, 202
     mv   x2, t0

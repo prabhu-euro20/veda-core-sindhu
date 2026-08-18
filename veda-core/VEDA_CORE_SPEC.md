@@ -237,13 +237,36 @@ Total: 23(Object_ID)+32(Base)+16(Length)+16(Offset)+16(Perms)+16(otype)+8(Reserv
 | `0x07` | Purecap Violation (an ordinary, non-Veda LOAD/STORE/AMO/etc. attempted while `veda_mode.veda_purecap` is set, or while executing inside a live `OCInvoke`-entered compartment) | **Active** — Veda-Core-specific, closes the real gap where `CGetBase` legitimately exposes a raw address into a GPR but nothing previously stopped that GPR from then being used as an ordinary memory-access base with zero capability check (Milestone 19). Same real property real CHERI's own "hybrid mode" has; this is Veda-Core's own equivalent of a "purecap mode" to close it. `cap_idx = 17` (`0b10001`), a sentinel outside the real 0-15 capability-register range, the same convention `0x01`'s own PCC-fetch reuse (`cap_idx = 16`) already established. |
 | `0x08` | Software-Defined Permission Violation | Reserved slot, kept available |
 | `0x09`–`0x0f` | reserved | — |
-| `0x10` | GLOBAL Violation | **Active** |
+| `0x10` | GLOBAL Violation | **Allocated, NOT enforced** — see R40 below |
 | `0x11` | PERMIT_EXECUTE Violation | **Active** |
 | `0x12` | PERMIT_LOAD Violation | **Active** |
 | `0x13` | PERMIT_STORE Violation | **Active** |
-| `0x14` | PERMIT_LOAD_CAPABILITY Violation | **Active** |
-| `0x15` | PERMIT_STORE_CAPABILITY Violation | **Active** |
-| `0x16` | PERMIT_STORE_LOCAL_CAPABILITY Violation | **Active** |
+| `0x14` | PERMIT_LOAD_CAPABILITY Violation | **Active** — R40, both layers |
+| `0x15` | PERMIT_STORE_CAPABILITY Violation | **Active** — R40, both layers |
+| `0x16` | PERMIT_STORE_LOCAL_CAPABILITY Violation | **Allocated, NOT enforced** — blocked on `0x10` |
+
+**R40 — THIS TABLE WAS WRONG ABOUT FOUR ROWS, AND A TABLE THAT OVERSTATES WHAT A MACHINE ENFORCES IS
+THE SAME DEFECT CLASS AS A MACHINE THAT FAILS OPEN.** `0x10`, `0x14`, `0x15` and `0x16` were all
+marked **Active** while appearing **zero times** in the Sail model and **zero times** in the RTL. The
+permission bits they name — GLOBAL (0), LOAD_CAPABILITY (4), STORE_CAPABILITY (5) and
+STORE_LOCAL_CAPABILITY (6) — were never read by any check. `CAndPerm` cleared them faithfully and
+`CGetPerm` reported them cleared faithfully; nothing governed anything. Software that attenuated a
+delegation using them believed it had.
+
+`0x14` and `0x15` are now genuinely enforced on both layers, at `OCL.C` and `OCS.C` — the only two
+instructions that move a capability through memory. They were the severe pair: without them, a
+delegation attenuated to *data only* could still be used to **lift a live, tagged capability out of
+the bytes it was allowed to read**, gaining authority over an object it was never given. That escape
+was demonstrated before it was closed (`sail_tests/vc_r40_cap_perm_enforce_neg.S`).
+
+`0x10` and `0x16` remain **allocated but unenforced, and are now labelled so.** They are not an
+oversight and not a quick fix: both require a **local/global capability distinction that this
+architecture does not yet have.** GLOBAL marks a capability that may be stored into
+globally-reachable memory; STORE_LOCAL_CAPABILITY is the authority to store one that lacks it. The
+pair exists to stop a short-lived reference — a stack capability being the canonical case — from
+outliving its frame by being written somewhere durable. That is a real temporal-safety mechanism and
+it deserves its own increment with its own design, not a bit bolted onto the dereference chain. Until
+then the honest statement is the one in this table.
 | `0x17` | reserved | — |
 | `0x18` | PERMIT_ACCESS_SYSTEM_REGISTERS Violation | **Active** |
 | `0x19` | Permit_Invoke Violation | **Active** — fires on `OCInvoke`'s own `Permit_Invoke` check against either operand (Section 1). |

@@ -30,7 +30,7 @@ _start:
 
     // object 20 -- NOT cow. Base 32-byte aligned, Perms Load|Store|NMC.
     li   x1, 20
-    li   x2, 0x800102000040100C
+    li   x2, 0x800102000040103C
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
     li   x1, 20
     .insn i 0x0b, 0x5, x1, x1, 0          # veda.bind c1, 20
@@ -56,7 +56,7 @@ _start:
 
     // ---------------- P5-P7: copy-on-write is the ONLY term that can fire ----------------
     li   x1, 21
-    li   x2, 0x800102800040100C            # a second object, Base 0x80010280
+    li   x2, 0x800102800040103C            # a second object, Base 0x80010280
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
     li   x1, 21
     .insn i 0x0b, 0x5, x6, x1, 0          # veda.bind c6, 21  -- BEFORE cow, so it keeps store

@@ -30,7 +30,7 @@ module tb;
               dut.CPU_Xreg_val_a0[17], dut.CPU_Xreg_val_a0[18], dut.CPU_Xreg_val_a0[19], dut.CPU_Xreg_val_a0[20]);
 
     if (dut.CPU_Xreg_val_a0[10] == 64'h80010000 && dut.CPU_Xreg_val_a0[11] == 64'h40 &&
-        dut.CPU_Xreg_val_a0[12] == 64'h100C && dut.CPU_Xreg_val_a0[13] == 64'h1 &&
+        dut.CPU_Xreg_val_a0[12] == 64'h103C && dut.CPU_Xreg_val_a0[13] == 64'h1 &&
         dut.CPU_Xreg_val_a0[14] == 64'hFFFF && dut.CPU_Xreg_val_a0[15] == 64'h80010010 &&
         dut.CPU_Xreg_val_a0[16] == 64'h10 &&
         dut.CPU_Xreg_val_a0[17] == 64'h80010000 && dut.CPU_Xreg_val_a0[18] == 64'h20 &&

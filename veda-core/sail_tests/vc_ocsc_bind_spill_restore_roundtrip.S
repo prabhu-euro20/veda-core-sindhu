@@ -37,7 +37,13 @@ _start:
     li   a0, 1
     .insn i 0x0b, 0x5, x0, a0, 0          # veda.bind c0, a0
 
-    # Object 2: SPILL region (Load|Store) -- ordinary .data.
+    # Object 2: SPILL region -- Load|Store|Load_Capability|Store_Capability.
+    #
+    # R40: the last two are new and they are the same kind of ABI consequence as
+    # the size note below. A spill slot must be at least 32 bytes AND the object
+    # must grant permission for a CAPABILITY to be written into and read out of
+    # it -- OCL.C/OCS.C are no longer authorised by the plain data permissions.
+    # Object 1 below is spilled FROM, not INTO, so it does not need them.
     # Length 0x0020, not 0x0010: as of the 256-bit capability respec a
     # capability occupies 32 bytes in memory, so a spill slot must be at
     # least 32 bytes or OCS.C is legitimately out of bounds. This is a real
@@ -45,7 +51,7 @@ _start:
     # spilling capabilities must size its slots the same way.
     la   t0, g_spill
     slli t0, t0, 32
-    li   t1, 0x0020000C
+    li   t1, 0x0020003C
     or   t0, t0, t1
     li   a0, 2
     .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0, t0

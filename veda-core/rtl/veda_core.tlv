@@ -317,7 +317,12 @@
       // generation=0, valid=1.
       {odt_mem[ODT_BASE+32+3], odt_mem[ODT_BASE+32+2], odt_mem[ODT_BASE+32+1], odt_mem[ODT_BASE+32+0]} = 32'h8001_0000;
       {odt_mem[ODT_BASE+32+8], odt_mem[ODT_BASE+32+7]} = 16'h0040;
-      {odt_mem[ODT_BASE+32+13], odt_mem[ODT_BASE+32+12]} = 16'h100C;
+      // R40: 16'h103C, not 16'h100C -- Permit_Load_Capability (bit 4) and
+      // Permit_Store_Capability (bit 5) added, mirroring veda_regs.sail's own
+      // seed. This object is the corpus's general scratch area and several tests
+      // spill a CAPABILITY into it; once those two permissions became real, a
+      // container lacking them could no longer hold one.
+      {odt_mem[ODT_BASE+32+13], odt_mem[ODT_BASE+32+12]} = 16'h103C;
       odt_mem[ODT_BASE+32+14] = 8'h00;
       odt_mem[ODT_BASE+32+17] = 8'h01;
       // Milestone 12 addition: reset-seeded objects start genuinely
@@ -3093,7 +3098,16 @@
             // provably the FIRST failure -- which is the whole point.
             $perms[15:0] = (|cpu$reset || |cpu>>1$reset) ?
                              (!veda_fixtures_mode ? 16'b0 :
-                              (#vreg == 11) ? 16'h100C :
+                              // R40: 16'h103C, not 16'h100C. c11 is the residency
+                              // fixture and veda_smoke_residency_deref_neg.S
+                              // dereferences it with OCL.C and OCS.C to prove the
+                              // residency arm is reached by the capability families
+                              // too. Once Load/Store_Capability became real, a
+                              // fixture lacking them stopped at 0x14 before
+                              // residency was ever consulted -- correct ordering, a
+                              // permission refusal outranks a repair request, but it
+                              // took the test's subject away.
+                              (#vreg == 11) ? 16'h103C :
                               (#vreg == 12) ? 16'h0402 :
                               (#vreg == 13) ? 16'h0400 :
                               (#vreg == 14) ? 16'h0002 : 16'b0) :
@@ -3389,6 +3403,24 @@
          $veda_sealed        = ($veda_rs1cap_otype != 16'hFFFF);
          $veda_perm_load_ok  = $veda_rs1cap_perms[2];
          $veda_perm_store_ok = $veda_rs1cap_perms[3];
+         // ═══ R40 -- THE TWO BITS THAT DECIDE WHETHER AUTHORITY MOVES ═══
+         //
+         // Before this, the only permission bits this file ever indexed were
+         // [1] EXECUTE, [2] LOAD, [3] STORE, [10] INVOKE and [12] NMC_COMPUTE.
+         // Bits 4 and 5 sat in the Perms word, CAndPerm faithfully cleared them
+         // (:3123), CGetPerm faithfully reported them cleared -- and nothing on
+         // either layer read them. OCL.C and OCS.C, the only instructions that
+         // move a CAPABILITY through memory, were authorised by the plain DATA
+         // permissions.
+         //
+         // On a machine with no addresses, where every authority IS a capability,
+         // that is the difference between "you may read these bytes" and "you may
+         // pick up the authority stored in them". Demonstrated before it was
+         // fixed: a delegation attenuated to data-only with CAndPerm still lifted
+         // a live, tagged capability naming an object it was never given.
+         // sail_tests/vc_r40_cap_perm_enforce_neg.S is that demonstration.
+         $veda_perm_loadcap_ok  = $veda_rs1cap_perms[4];
+         $veda_perm_storecap_ok = $veda_rs1cap_perms[5];
          // ═══ RTL-16 (R18): THE BOUNDS CHECK MUST NOT WRAP ═══
          //
          // This addition was 64 bits wide on both sides, and $rs2_data is a
@@ -3476,8 +3508,11 @@
          // memory access -- it is the only rule under which
          // one-capability-one-granule is well defined.
          $veda_capmem_misaligned = $veda_real_addr[4:0] != 5'b0;
-         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
-         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || $veda_cow_write || !$veda_perm_store_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
+         // R40: the two new terms join the VIOLATION lists as well as the cause
+         // chains below -- one alone gives a trap with the wrong cause, or a cause
+         // with no trap, per the rule stated at $veda_trap_taken.
+         $veda_oclc_violation = $is_veda_ocl_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || !$veda_perm_load_ok  || !$veda_perm_loadcap_ok  || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
+         $veda_ocsc_violation = $is_veda_ocs_c && (!$veda_rs1cap_tag || $veda_gen_stale || $veda_sealed || $veda_cow_write || !$veda_perm_store_ok || !$veda_perm_storecap_ok || !$veda_oclc_bounds_ok || $veda_capmem_misaligned || $veda_deref_nonresident);
 
          // Tag-store granule index: $veda_real_addr is absolute
          // (ELFMEM_BASE-relative), tag_mem[] is declared 0-based
@@ -4432,6 +4467,9 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_load_ok                    ? 5'h12 :
+            // R40: below the plain LOAD arm. Reading the bytes is the
+            // prerequisite; reading them AS AUTHORITY is the extra right.
+            !$veda_perm_loadcap_ok                 ? 5'h14 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :
@@ -4440,6 +4478,11 @@
             (!$veda_rs1cap_tag || $veda_gen_stale) ? 5'h02 :
             $veda_sealed                           ? 5'h03 :
             !$veda_perm_store_ok                    ? 5'h13 :
+            // R40: the store-side twin. Writing bytes is the prerequisite;
+            // writing AUTHORITY into them is the extra right. Above alignment,
+            // bounds, residency and copy-on-write because it is a refusal, not a
+            // repair request.
+            !$veda_perm_storecap_ok                ? 5'h15 :
             $veda_capmem_misaligned                ? 5'h08 :
             !$veda_oclc_bounds_ok                  ? 5'h01 :
             $veda_deref_nonresident                ? 5'h0A :

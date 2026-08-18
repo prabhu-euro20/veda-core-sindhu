@@ -25,8 +25,8 @@ module tb;
               dut.CPU_Xreg_val_a0[10], dut.CPU_Xreg_val_a0[11], dut.CPU_Xreg_val_a0[12],
               dut.CPU_Xreg_val_a0[13], dut.CPU_Xreg_val_a0[14], dut.CPU_Xreg_val_a0[15]);
 
-    if (dut.CPU_Xreg_val_a0[10] == 64'h100C &&   // original perms
-        dut.CPU_Xreg_val_a0[11] == 64'h000C &&   // 0x100C & 0x000C
+    if (dut.CPU_Xreg_val_a0[10] == 64'h103C &&   // original perms
+        dut.CPU_Xreg_val_a0[11] == 64'h000C &&   // 0x103C & 0x000C
         dut.CPU_Xreg_val_a0[12] == 64'h1    &&   // tag survives attenuation
         dut.CPU_Xreg_val_a0[13] == 64'h80010000 && // base untouched
         dut.CPU_Xreg_val_a0[14] == 64'h0    &&   // all perms cleared
