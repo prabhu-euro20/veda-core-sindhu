@@ -6879,6 +6879,24 @@
          // Named as a deliberate belt-and-braces write rather than left to
          // look like a line whose absence nobody noticed.
          odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_RESIDENT] <= 8'h00;
+         // ═══ R58 -- DESTROY MUST RESET owner_domain, AND THIS ARM DID NOT ═══
+         // Sail's Destroy writes owner_domain = VEDA_DOMAIN_ANY (R41: a
+         // destroyed slot has no owner and the previous occupant's policy has no
+         // claim). This arm wrote every other field and left owner_domain
+         // PRESERVED, so the two layers disagreed about a destroyed slot.
+         //
+         // IT IS OBSERVABLE, and through the one channel this register keeps
+         // finding: veda_bind_domain_ok is evaluated BEFORE e.valid, so a Bind
+         // against a DESTROYED slot still consults its owner_domain and the trap
+         // CAUSE reports which way it went --
+         //     reset to ANY -> gate passes -> OBJECT_NOT_FOUND 0x05
+         //     left as N    -> gate fails  -> DOMAIN_VIOLATION  0x0B
+         // So the RTL's stale value was an ORACLE FOR THE DESTROYED SLOT'S
+         // PREVIOUS OWNER, which is exactly the refusal-cause class R44 closed
+         // for bind mode 0b11. Closed in Sail's direction, for both reasons.
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN]   <= VEDA_DOMAIN_ANY[7:0];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+1] <= VEDA_DOMAIN_ANY[15:8];
+         odt_mem[CPU_veda_odt_addr_a0+ODT_OFF_OWNER_DOMAIN+2] <= {4'b0, VEDA_DOMAIN_ANY[19:16]};
       // ────────────────────────────────────────────────────────────────
       //  RTL-6c: the paging pair's writes, added as further arms of THIS
       //  chain rather than a new always_ff. That placement is required,
