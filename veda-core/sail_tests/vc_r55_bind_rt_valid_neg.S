@@ -38,10 +38,17 @@ _start:
     csrw mtvec, t0
     li   s0, 0
 
-    # Seed one object in each region under test. Populate does not consult the
-    # region table at all -- only veda_odt_index's window bounds -- so all three
-    # of these succeed regardless of rt_valid or residency, and that is what
-    # makes the Bind results below attributable to the Bind gate alone.
+    # Seed one object in each region under test.
+    #
+    # R63 CHANGED THIS BLOCK, and the sentence it replaces is worth keeping in
+    # view because this file WROTE DOWN THE GAP AND THEN DEPENDED ON IT:
+    #   "Populate does not consult the region table at all -- only
+    #    veda_odt_index's window bounds -- so all three of these succeed
+    #    regardless of rt_valid or residency"
+    # That was true, it was the setup, and it was a finding. R63 closed it: a
+    # Populate naming a region that has never been configured is now refused, so
+    # the region-3 seed below TRAPS, and region 3 can no longer hold an object
+    # that any instruction created.
     la   t0, arena
     slli t0, t0, 32
     li   t1, (32 << 16) | 0x000C
@@ -59,8 +66,27 @@ _start:
     li   a1, 77                             # {region=0, local=77} -- the current region
     mv   a2, s9
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2
-    bne  s0, x0, check_fail                 # none of the populates may trap
+    li   t4, 1
+    bne  s0, t4, check_fail                 # R63: exactly ONE of the four traps --
+                                            # the region-3 seed. The other three
+                                            # name configured regions and must not.
 
+    # ═══ R63 RESIDUAL, STATED HERE BECAUSE THIS FILE IS WHERE IT SHOWS ═══
+    # R55's finding was that a bind into region 3 MINTED A LIVE CAPABILITY. That
+    # demonstration needed a real entry in region 3's ODT space, and the seed
+    # above is how this file made one. R63 has now made that state UNREACHABLE
+    # BY SOFTWARE -- no instruction can create an entry in an unconfigured
+    # region -- so what follows can still prove the bind is REFUSED, but can no
+    # longer prove what it would otherwise have MINTED.
+    #
+    # That is a fix working, not coverage lost: the bind gate is now
+    # defence-in-depth against a state only a corrupt or half-torn ODT could
+    # produce, which is exactly the state R10 seeded region 3 into
+    # ({rt_valid = false, region_resident = true}) and exactly why it did.
+    # Restoring the severity demonstration needs a RESET FIXTURE, the technique
+    # R59 had to use for owner_hart for the identical reason -- recorded as
+    # UNMEASURED rather than quietly dropped.
+    #
     # ═══ THE FINDING: region 3, never configured, resident bit set ════════
     # A REGION FAULT IS A HARD TRAP FOR EVERY BIND MODE, .notrap included --
     # veda_bind_insts.sail says so in as many words, and the first version of
@@ -71,7 +97,7 @@ _start:
     .insn i 0x0b, 0x5, x3, a1, 1            # veda.bind.notrap c3
     .insn r 0x5b, 0x0, 0x03, t3, x3, x0     # cgettag
     bne  t3, x0, check_fail                 # MUST be 0 -- it was 1 before the fix
-    li   t4, 1
+    li   t4, 2
     bne  s0, t4, check_fail                 # and it must have TRAPPED, exactly once
 
     # ═══ CONTROL 1: region 2 is configured but NOT resident -- also refused.
@@ -81,7 +107,7 @@ _start:
     .insn i 0x0b, 0x5, x4, a1, 1            # veda.bind.notrap c4
     .insn r 0x5b, 0x0, 0x03, t3, x4, x0
     bne  t3, x0, check_fail
-    li   t4, 2
+    li   t4, 3
     bne  s0, t4, check_fail                 # the second refusal, and no more
 
     # ═══ CONTROL 2 -- THE LOAD-BEARING ONE: region 1 is configured AND
@@ -93,7 +119,7 @@ _start:
     .insn r 0x5b, 0x0, 0x03, t3, x5, x0
     li   t4, 1
     bne  t3, t4, check_fail
-    li   t4, 2
+    li   t4, 3
     bne  s0, t4, check_fail                 # and it added NO trap of its own
 
     # ═══ CONTROL 3: the intra-region fast path. Region 0 is the current
@@ -115,7 +141,7 @@ _start:
     .insn r 0x0b, 0x3, 0x00, t3, x5, t1     # ocl.d  c5
     li   t4, 0x1234
     bne  t3, t4, check_fail
-    li   t4, 2
+    li   t4, 3
     bne  s0, t4, check_fail                 # still exactly the two refusals
 
     RVMODEL_HALT_PASS

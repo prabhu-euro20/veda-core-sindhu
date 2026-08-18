@@ -669,6 +669,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r62.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R62 domain nameable)"
 vvp "$SIM/sim_r62.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r62_domain_nameable.hex" | tee -a "$RUNLOG"
 
+echo "==> R63: Compiling (a Populate must name a region that exists)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r63.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r63_region_write_alias.sv"
+echo "==> Simulating (R63 region write alias)"
+vvp "$SIM/sim_r63.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r63_region_write_alias.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

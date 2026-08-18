@@ -2166,7 +2166,24 @@
          // (base 0 + [0,256) < 768), so this is not a corpus concern -- it
          // is the guard against a MIS-PROGRAMMED region base pointing
          // outside the array, whose blast radius is region-wide.
-         $veda_odt_idx_ok = ($veda_odt_entry_idx < {16'b0, ODT_ENTRIES[15:0]});
+         // R63: and the REGION the index was resolved through must be a region
+         // that EXISTS. This mirrors Sail's veda_odt_index, where the same gate
+         // lands at the same choke point. The region half of an Object_ID was an
+         // unforgeable identity on the READ path (R55 put rt_valid on bind) and a
+         // bare index here, so a Populate could name any in-window region,
+         // configured or not, and land its descriptor wherever that region's base
+         // pointed. Regions 4..7 are reset to rt_odt_base = 0, which IS region 0's
+         // base, so `local` alone picked the slot: measured on the shipped model as
+         // populate {5,300} accepted, bind {0,300} returning the prober's own arena,
+         // and bind {5,300} refused with REGION_FAULT -- a descriptor written under
+         // a name its own author was not allowed to read.
+         //
+         // The intra-region fast path is deliberately exempt: a crossing has already
+         // validated the current region (R10/R55), so re-reading the RT for it would
+         // be redundant and, by veda_crbr_load's own argument, circular.
+         $veda_region_nameable = $veda_intra_region ||
+                                  ($veda_region_in_window && rt_valid[$veda_region[2:0]]);
+         $veda_odt_idx_ok = ($veda_odt_entry_idx < {16'b0, ODT_ENTRIES[15:0]}) && $veda_region_nameable;
          $veda_odt_idx[7:0]    = $veda_local[7:0];
          // Clamp to entry 0 when out of bounds so the physical array read
          // stays in range and never returns X. $veda_odt_idx_ok, folded into
@@ -2711,7 +2728,14 @@
          // a separate signal would be pure duplication -- two routes computing
          // the same condition, free to drift apart later.
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
-                                          (!($priv || $veda_oda_authorized) || $veda_odt_retired ||
+                                          // R63: the region named must EXIST. $veda_odt_idx_ok
+                                          // already refuses to resolve it, but that is a silent
+                                          // no-op -- the instruction would retire reporting
+                                          // success while nothing was written, which is R14's
+                                          // class exactly. Measured on the first attempt at this
+                                          // fix in Sail: the populate did not trap.
+                                          (!$veda_region_nameable ||
+                                           !($priv || $veda_oda_authorized) || $veda_odt_retired ||
                                            $veda_object_is_executing ||
                                            // R47: BOTH windows. The new one because this
                                            // instruction CREATES the authority; the old one
@@ -2761,7 +2785,13 @@
          // unless the ODA covers address zero; a slot this actor destroyed
          // itself keeps its Base and stays in reach.
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
-                                          (!($priv || $veda_oda_authorized) ||
+                                          // R63: Destroy is deliberately NOT gated on
+                                          // $veda_odt_valid (an invalid slot's generation must
+                                          // still be protected), so unlike the other writers the
+                                          // region term does not reach it through odt_valid. It
+                                          // gets its own.
+                                          (!$veda_region_nameable ||
+                                           !($priv || $veda_oda_authorized) ||
                                            $veda_object_is_executing ||
                                            $veda_oda_denies_old);
          // ─────────────────────────────────────────────────────────
