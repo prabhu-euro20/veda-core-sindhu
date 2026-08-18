@@ -38,6 +38,7 @@ p14_cow_eligibility.S   AGREE      R38: the COW fault asks WHETHER, never WHO. B
 p15_priv_model.S        AGREE      R36/R39 CLOSED: the two layers finally share a privilege
 p16_populate_policy_reset.S AGREE  R41 CLOSED: a Populate mints a NEW object, so the previous
 p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STORE_CAPABILITY are
+p18_cow_not_pageable.S  AGREE      R38(b) CLOSED: page.out refuses on a copy-on-write object
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and
@@ -58,6 +59,16 @@ p17_cap_perm_flow.S     AGREE      R40 CLOSED: PERM_LOAD_CAPABILITY and PERM_STO
 # it, and it records the refusal's cap_idx as the DEREFERENCED capability rather
 # than the destination -- the distinction that a bisection caught in the first
 # draft of the Sail test's expected value.
+#
+# p18_cow_not_pageable: R38 put the copy-on-write split right in the live
+# capabilities that predate set.cow, and page.out exists to destroy exactly those
+# -- it bumps the generation while carrying `cow` across, so one round trip left
+# an object nobody could ever split. Clearing `cow` is NOT the recovery it looks
+# like: on a genuinely shared object it lets every sharer write the same object,
+# which is the isolation copy-on-write was providing. The refusal therefore sits
+# at the instruction that destroys the evidence. The probe's w2 is the whole
+# increment -- the entitlement is still there afterwards -- and w3 is the control
+# that a NON-cow object still pages out and back in cleanly.
 #                                  mechanism, so privileged behaviour can be compared at all
 #                                  -- p13's own header recorded that it could not be. MPP,
 #                                  the U-mode CSR refusal and its cause, MRET-below-Machine,

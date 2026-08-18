@@ -2638,6 +2638,23 @@
                                         $veda_object_is_executing ||
                                         !$veda_odt_valid ||
                                         !$veda_odt_resident ||
+                                        // R38(b): a copy-on-write object is not
+                                        // pageable. This instruction bumps the
+                                        // generation -- that is how it invalidates
+                                        // outstanding capabilities, and it is
+                                        // necessary because every capability caches
+                                        // its own Base. But R38 put the split right
+                                        // in exactly those capabilities, and `cow`
+                                        // survives the eviction, so one round trip
+                                        // left an object nobody could ever split.
+                                        // Clearing cow is NOT the recovery: it lets
+                                        // every sharer write the same object, which
+                                        // is the isolation copy-on-write provided.
+                                        // The cost is real and stated -- a shared
+                                        // object cannot be evicted until the
+                                        // sharing resolves. See the Sail arm for
+                                        // the full reasoning and the successor.
+                                        $veda_odt_cow ||
                                         ($veda_odt_gen == 24'hFFFFFF));
          //  PAGE-IN refuses unless the object is live AND currently paged
          //  out. The `resident` half is the security-critical one: page-in
