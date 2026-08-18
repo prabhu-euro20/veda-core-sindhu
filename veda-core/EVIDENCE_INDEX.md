@@ -143,3 +143,54 @@ four labels.
   conversation to independently verify — if a reviewer asks about
   something not on this list, it should be checked fresh, not assumed
   covered by omission.
+
+---
+
+## ADDENDUM -- 2026-08-18 hardening pass (R36 through R43)
+
+**Appended rather than merged into the 2026-07-28 index above, which is a snapshot
+of its own pass and stays intact.** Same legend. Every count here was produced by
+the run recorded at the bottom of this section, not recalled.
+
+### Findings closed this pass, each with its own DESIGN_07 entry
+
+| finding | what it closed | evidence |
+|---|---|---|
+| **R36 / R39** | `veda.droppriv` retired, Custom-3 unclaimed, standard `mstatus.MPP` + `mret` privilege on both layers, and the generic CSR privilege check the RTL never had -- every one of its fourteen Machine-only CSRs, `mtvec` included, had been reachable from U-mode | **[FILE, COMMITTED]** `sail_tests/vc_r39_csr_priv.S`, `rtl/sim/veda_smoke_r36_priv_trap.S`, `rtl/sim/veda_smoke_r27_csr_priv.S`, `difftest/probes/p15_priv_model.S` |
+| **R38** | the copy-on-write fault got an eligibility predicate -- the capability's own `PERM_STORE`, so the split right belongs to whoever held write authority when the object became copy-on-write | **[FILE, COMMITTED]** `difftest/probes/p14_cow_eligibility.S`, `sail_tests/vc_check_order.S` PHASE D, `rtl/sim/veda_smoke_check_order.S` P8 |
+| **R38(b)** | a copy-on-write object is not pageable -- `page.out` was destroying the very capabilities that carry the split right | **[FILE, COMMITTED]** `sail_tests/vc_r38b_cow_not_pageable.S`, `difftest/probes/p18_cow_not_pageable.S` |
+| **R40** | `PERM_LOAD_CAPABILITY` / `PERM_STORE_CAPABILITY` enforced at `OCL.C`/`OCS.C`. **The escape was demonstrated before it was closed**: a delegation attenuated to data-only with `CAndPerm` lifted a live, tagged capability naming an object it was never given | **[FILE, COMMITTED]** `sail_tests/vc_r40_cap_perm_enforce_neg.S`, `difftest/probes/p17_cap_perm_flow.S` |
+| **R41** | plain `ODT-Populate` clears `cow` and resets `owner_domain` -- it had carried the previous occupant's policy onto a freshly minted object, and the two layers disagreed about it | **[FILE, COMMITTED]** `difftest/probes/p16_populate_policy_reset.S` |
+
+### Register integrity
+
+**[RE-RUN NOW]** The DESIGN_07 finding register was audited by enumerating every
+`R<n>` reference in every `.md`/`.tlv`/`.sail`/`.S`/`.sv`/`.sh` file across all
+three repositories and in every commit message, then differencing against the
+`###` headings. **Four numbers had no entry -- R18, R25, R27, R28 -- and three of
+them were shipped, verified hardware fixes**, two of exploitable class. All four
+are now entered. The register runs **R1..R43 with no gaps.**
+
+### Open, honestly
+
+- **[OPEN]** **R42** -- `PERM_GLOBAL` and `PERM_STORE_LOCAL_CAPABILITY` (causes
+  `0x10`/`0x16`) are allocated and enforced by neither layer. They need a
+  local-vs-global capability distinction this architecture does not have.
+  `VEDA_CORE_SPEC.md`'s cause table now reads **"Allocated, NOT enforced"** for
+  both instead of claiming Active.
+- **[OPEN]** **R43** -- `Rebind` does not enforce the "already-bound" precondition
+  §4 describes: it checks neither the tag nor that the register names the same
+  object. Not an escalation today; it becomes one the instant anybody makes Rebind
+  preserve the holder's own `Perms`.
+- **[OPEN]** Phase 2's `backing` field (`mmap(file)`) is still unbuilt -- the ODT
+  entry has `valid`/`generation`/`owner_hart`/`retired`/`resident`/`owner_domain`/`cow`
+  and no `backing`.
+
+### The single command that reproduces all of it
+
+**[FILE, COMMITTED]** `veda-core/verification.sh`. It used to hardwire its root to
+`/home/prabhu/makerchip/rva23-core` -- a **frozen sibling project this line is not
+entitled to write into** -- so the one command offered as "run this to verify"
+would have built into someone else's tree and verified whatever vintage happened
+to be sitting there. It now resolves its own location, and it runs the
+**cross-layer differential suite** too, which it never did.

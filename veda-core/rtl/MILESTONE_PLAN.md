@@ -107,6 +107,32 @@ project's own repeated negative-control discipline (RTL ACT4 testbench,
 every Sail milestone, the V-C self-check corpus) rather than only showing
 a correct case pass.
 
+## Milestone 4 addendum -- SUPERSEDED BY R36. `veda.droppriv` is retired.
+
+**Read the addendum below as history, not as instruction.** The mechanism it argues
+for no longer exists, and the reasoning is preserved because the way it expired is
+worth keeping.
+
+The addendum justified a custom one-way privilege drop on exactly one ground:
+*"not a partial, semantically-misleading subset of real `mstatus`/`mret` (which
+would look standard while not behaving standard, since real `mret` is a
+trap-return semantic **this core has no trap to return from**)"*. That was true
+when it was written. **Milestone 9 built the traps and MRET.** The premise expired
+and the instruction outlived it by twenty-seven milestones, because nothing sends a
+reader back to a justification once its condition changes.
+
+What replaced it needed no specification work at all, because the Sail model had
+implemented it since long before Veda existed: a trap raises to Machine saving
+`mstatus.MPP`, `mret` restores from it, MRET below Machine is illegal, and software
+drops privilege by writing MPP and executing `mret`. Custom-3 is unclaimed again --
+which is what `VEDA_CORE_SPEC.md`'s ISA table had said all along, having never been
+updated when `droppriv` was added to it.
+
+The addendum's own cross-validation still stands and is why privilege was not
+simply deleted: every real capability system checked -- seL4, CHERI hardware on
+Piccolo/Flute/Toooba, Plessey -- sits on top of a genuine privilege architecture
+rather than replacing it. Veda-Core still does. See DESIGN_07 R36 and R39.
+
 ## Milestone 4 addendum: a minimal, real privilege gate, decided after
 direct user challenge, not preemptively
 

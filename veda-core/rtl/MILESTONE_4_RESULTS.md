@@ -1,5 +1,15 @@
 # Veda-Core RTL — Milestone 4 Results
 
+> **SUPERSEDED IN PART BY R36 (DESIGN_07).** `veda.droppriv` and the Custom-3
+> opcode claim described below are **retired**. Privilege is now the standard
+> RISC-V model on both layers -- trap raises to Machine saving `mstatus.MPP`,
+> `mret` restores from it. The Milestone 4 addendum's stated justification was
+> that "real `mret` is a trap-return semantic this core has no trap to return
+> from"; Milestone 9 built the traps. **Everything below is correct as a record
+> of what was built at Milestone 4 and should not be read as current
+> behaviour.** The `$priv` bit itself, and the ODT-Populate/Destroy gating on
+> it, survive unchanged.
+
 **Date:** 2026-07-23
 **Scope:** the minimal, real privilege gate decided in `MILESTONE_PLAN.md`'s
 Milestone 4 addendum (a 1-bit `$priv` register, reset to `1`, cleared

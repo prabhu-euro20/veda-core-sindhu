@@ -16,6 +16,25 @@
 
 ---
 
+## 0. STATE CORRECTIONS -- read this before the milestone narrative above
+
+**The paragraph above is a milestone-by-milestone HISTORY and is kept intact, because it records what
+was true when each milestone landed. Four of its statements are no longer true of the machine, and a
+reader would act on all four. They are corrected here rather than edited out of the history.**
+
+| the narrative says | what is true now |
+|---|---|
+| *"`veda.droppriv` in Custom-3"* (Milestone 4) | **RETIRED (R36).** Custom-3 is unclaimed and every encoding in it raises Illegal_Instruction. Privilege is the standard model on both layers: a trap raises to Machine saving `mstatus.MPP`, `mret` restores from it, MRET below Machine is illegal, and software drops privilege by writing MPP and executing `mret`. The addendum that justified the custom instruction said "real `mret` is a trap-return semantic this core has no trap to return from" -- Milestone 9 built the traps. |
+| *"this project's own Sail test config has S/U-mode disabled, so privilege can never actually drop below Machine there"* (Milestone 11) | **FALSE, and it was already false when written into later documents.** The config has `"S"` and `"U"` at `supported: true`, and `sail_tests/vc_r39_csr_priv.S` enters U-mode via `mstatus.MPP` + `mret` today. |
+| *"the remaining named gaps are `OSpecialRW`'s own privilege-only gating, real physical multi-hart RTL, and `Perms`-on-PCC"* (Milestone 14) | Still open, **but the list is no longer complete.** See DESIGN_07 R42 (GLOBAL / STORE_LOCAL_CAPABILITY need a local-vs-global notion) and R43 (Rebind does not enforce the "already-bound" precondition §4 describes). |
+| suite sizes quoted per milestone (24/24, 25 programs, ...) | **Current: Sail self-check 102/102, RTL smoke 90/90, ACT4 51/51, cross-layer differential 20/20.** Run `veda-core/verification.sh` -- it resolves its own root and runs all four. |
+
+**Also corrected since the narrative was written**, each with a DESIGN_07 entry: the copy-on-write
+fault now has an eligibility predicate and a copy-on-write object is not pageable (R38, R38(b));
+`PERM_LOAD_CAPABILITY` and `PERM_STORE_CAPABILITY` are enforced at `OCL.C`/`OCS.C` (R40); plain
+`ODT-Populate` clears `cow` and resets `owner_domain` (R41); and the RTL gained the generic CSR
+privilege check it never had (R39).
+
 ## 1. ISA Summary
 
 Veda-Core reuses the standard RV64I instruction formats (R-type and I-type) and adds three custom instruction families, all under RISC-V's reserved custom-opcode space (Custom-3 deliberately left unallocated for future growth — this is a repeated, verified lesson from CHERI's own 13-year history of needing more room than initially planned).

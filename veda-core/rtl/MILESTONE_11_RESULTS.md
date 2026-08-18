@@ -1,6 +1,15 @@
 # Veda-Core Milestone 11 Results — OSpecialRW + Capability-Authority-Gated ODT-Populate/ODT-Destroy (Sail + RTL)
 
 **Date:** 2026-07-25
+> **TWO CORRECTIONS FROM LATER WORK, both about the same sentence.** This
+> document records that "this project's own Sail test config has S/U-mode
+> disabled, so privilege can never actually drop below Machine there -- RTL's own
+> independent `veda.droppriv` was used instead". **Both halves are now false.**
+> The Sail config has `"S"` and `"U"` at `supported: true`, and a test that enters
+> U-mode via `mstatus.MPP` + `mret` runs there today
+> (`sail_tests/vc_r39_csr_priv.S`). And `veda.droppriv` is retired -- R36. The
+> milestone's own result is unaffected; only the workaround it describes is.
+
 **Scope:** `NEXT_STEPS_ROADMAP.md` §2.5, real since Milestone 4:
 `ODT-Populate`/`ODT-Destroy` have gated on ordinary RISC-V privilege
 level alone (`cur_privilege == Machine` / RTL's own `$priv`), a stated,

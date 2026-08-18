@@ -73,6 +73,13 @@ Before designing the mechanism further, the actual, concrete Sail hooks were rea
 - **`Perms` on PCC** (e.g., a real `Permit_Execute`-on-PCC check distinct from the capability-register-level `Permit_Execute` `OCInvoke` already checks on its *operand* before entry): real CHERI does track PCC permissions, but nothing in this project's own current instruction set would exercise a PCC-level permission distinct from what `OCInvoke`'s own entry check (Milestone 10, cause `0x11`/`0x19`) already covers once. Adding it now would be unused surface area — deferred until a real consumer exists.
 - **Any base-ISA-wide fetch capability check**: explicitly rejected in Section 2, not merely postponed — this is the central rescoping decision of this document.
 - **A real distinguishable `cap_idx` sentinel for every future "not a real capability register" case**: this design claims exactly one sentinel value (16, matching CHERI's own `PCC_IDX`); if a future feature needs its own, that is that feature's own decision to make, not preemptively reserved here.
+- **CORRECTION (R36/R39):** the sentence below is stale in both halves. The Sail config has `"S"` and
+  `"U"` at `supported: true` and U-mode tests run there today; and the RTL now has the standard
+  privilege model -- `mstatus` with MIE/MPIE/MPP, trap raises to Machine, `mret` restores -- rather
+  than "no real multi-privilege-level state beyond the single `$priv` bit". **The conclusion it draws
+  is unaffected and still holds**: `OCInvoke` narrows code bounds and deliberately does not touch
+  privilege, which is the separation this section argues for. Kept as written because the argument is
+  still the right one; only its premises moved.
 - **Interaction with genuine S/U-mode privilege transitions**: this project's own Sail test config still has S/U-mode disabled (`MILESTONE_11_RESULTS.md`'s own documented limitation) and RTL has no real multi-privilege-level state beyond the single `$priv` bit — a real PCC-and-privilege-level interaction (e.g., does entering a compartment via `OCInvoke` also change privilege?) is explicitly not addressed here, matching real CHERI's own documented separation ("ring-based privilege" and "capability control of ring-related privilege... coexist," already cited in `MILESTONE_11_RESULTS.md`) — `OCInvoke` narrows *code bounds*, it does not touch `$priv`, by design, unchanged from Milestone 10.
 
 ## 8. Sequencing
