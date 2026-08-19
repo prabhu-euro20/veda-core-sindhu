@@ -689,6 +689,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r66.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R66 generation collision)"
 vvp "$SIM/sim_r66.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r66_gen_collision.hex" | tee -a "$RUNLOG"
 
+echo "==> R67: Compiling (a callee must not consume the caller's trap frame)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r67.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r67_frame_owner.sv"
+echo "==> Simulating (R67 trap frame owner)"
+vvp "$SIM/sim_r67.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r67_frame_owner.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

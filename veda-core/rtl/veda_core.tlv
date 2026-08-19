@@ -5937,9 +5937,27 @@
          //  then falling through to a separate mret requires fetching that mret,
          //  by then outside the narrowed bounds. OCRETURN installs PCC from its
          //  own operand, so a saved frame is superseded -- abandoned, not restored.
+         //  R67: a trap frame has an OWNER, not just a count. An OCRETURN
+         //  executed by a principal that never trapped -- a callee the handler
+         //  OCInvoked -- was popping a frame it did not push. Measured on Sail:
+         //  compartment D returned and compartment C's frame went from
+         //  mepcc_length 0x40 to the unbounded sentinel, so C could never be
+         //  reinstated with its own bounds. R12's poison does not catch it,
+         //  because poison arms on a nested TRAP and no trap occurred.
+         //  This counter is the distinction R12's own justification already
+         //  implies: OCRETURN supersedes the saved context when it is the
+         //  handler LEAVING, not when it merely unwinds an OCInvoke the handler
+         //  made. Saturating, so a runaway cannot alias zero.
+         $veda_ocreturn_ok = >>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation);
+         $veda_invoke_since_trap[7:0] = $reset ? 8'b0 :
+                                  (>>1$veda_trap_taken) ? 8'b0 :
+                                  (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation) && (>>1$veda_trap_depth != 8'b0) && (>>1$veda_invoke_since_trap != 8'hFF)) ? (>>1$veda_invoke_since_trap + 8'b1) :
+                                  ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap != 8'b0)) ? (>>1$veda_invoke_since_trap - 8'b1) :
+                                  (>>1$mret_ok && (>>1$veda_trap_depth == 8'b1)) ? 8'b0 :
+                                                                                            >>1$veda_invoke_since_trap;
          $veda_trap_depth[7:0] = $reset ? 8'b0 :
                                   (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'hFF)) ? (>>1$veda_trap_depth + 8'b1) :
-                                  ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth != 8'b0)) ? (>>1$veda_trap_depth - 8'b1) :
+                                  ((>>1$mret_ok || ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap == 8'b0))) && (>>1$veda_trap_depth != 8'b0)) ? (>>1$veda_trap_depth - 8'b1) :
                                                                                             >>1$veda_trap_depth;
          //  Poison marks a chain that cannot be reconstructed: a handler that
          //  narrowed ITSELF -- via OCInvoke, or the PCC CSRs, writable precisely
@@ -5951,16 +5969,16 @@
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth != 8'b0) &&
                                ((>>1$veda_pcc_length != 40'hFFFFFFFFFF) || (>>1$veda_current_region != 20'b0) || (>>1$veda_pcc_object != VEDA_OBJECT_NONE))) ? 1'b1 :
                               (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'hFF)) ? 1'b1 :
-                              ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
+                              ((>>1$mret_ok || ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap == 8'b0))) && (>>1$veda_trap_depth == 8'd1)) ? 1'b0 :
                                                                                         >>1$veda_trap_poison;
          $veda_mepcc_base[55:0] = $reset ? 56'b0 :
                                    (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_base :
-                                   ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
+                                   ((>>1$mret_ok || ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap == 8'b0))) && (>>1$veda_trap_depth == 8'd1)) ? 56'b0 :
                                    (>>1$csr_write_en && >>1$csr_is_veda_mepcc_base && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[55:0] :
                                                                                        >>1$veda_mepcc_base;
          $veda_mepcc_length[39:0] = $reset ? 40'hFFFFFFFFFF :
                                      (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_length :
-                                     ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
+                                     ((>>1$mret_ok || ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap == 8'b0))) && (>>1$veda_trap_depth == 8'd1)) ? 40'hFFFFFFFFFF :
                                      (>>1$csr_write_en && >>1$csr_is_veda_mepcc_length && >>1$priv && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata[39:0] :
                                                                                            >>1$veda_mepcc_length;
          // RTL-9 (R11(b)): the name PCC is running under. Mirrors Sail's
@@ -5987,7 +6005,7 @@
          // the defect R12 existed to remove.
          $veda_mepcc_object[43:0] = $reset ? VEDA_OBJECT_NONE :
                                      (>>1$veda_trap_taken && (>>1$veda_trap_depth == 8'b0)) ? >>1$veda_pcc_object :
-                                     ((>>1$mret_ok || (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation))) && (>>1$veda_trap_depth == 8'd1)) ? VEDA_OBJECT_NONE :
+                                     ((>>1$mret_ok || ($veda_ocreturn_ok && (>>1$veda_invoke_since_trap == 8'b0))) && (>>1$veda_trap_depth == 8'd1)) ? VEDA_OBJECT_NONE :
                                                                                                >>1$veda_mepcc_object;
          // RTL Milestone 18: plain read/write CSR, no other write source
          // (unlike veda_pcc_base/length, which also get written by a
