@@ -165,6 +165,13 @@
    //  becomes domain-0-only. Exactly the trap resident documented at its own
    //  declaration.
    localparam bit [19:0] VEDA_DOMAIN_ANY = 20'hFFFFF;
+   // R75/R76 -- THE AMBIENT CREATION DOMAIN. Verified free before use: 20'hFFFFE
+   // appears nowhere as a domain on either layer, with 20'hFFFFF as the control
+   // proving the search finds real hits. Deliberately NOT a real region, so
+   // $veda_bind_domain_ok's third arm (owner_domain == $veda_pcc_object[43:24])
+   // can never match it and a BOOT-owned object is bindable ONLY from ambient,
+   // which is that same function's second arm. THE BIND GATE NEEDS NO EDIT.
+   localparam bit [19:0] VEDA_DOMAIN_BOOT = 20'hFFFFE;
    // MILESTONE 24 (TCM_FAST_PATH_DESIGN.md): the first real DRAM-latency
    // number this core has ever modeled -- every prior milestone's own
    // cycle counts assumed odt_mem[]/elfmem[] access is always 1 cycle,
@@ -2415,7 +2422,21 @@
          // coincidence does not cover -- {region 0, local 0}, a perfectly legal
          // id -- where the RTL would have written ANY (fail-OPEN) while Sail
          // wrote domain 0. Invisible to every test in the corpus.
-         $veda_creating_domain[19:0] = ($veda_pcc_object == VEDA_OBJECT_NONE) ? VEDA_DOMAIN_ANY
+         // R75/R76 -- THE AMBIENT ARM RETURNED VEDA_DOMAIN_ANY, AND THAT ONE
+         // VALUE IS WHAT EVERY MEASURED ESCALATION CONSUMED. R75 bound another
+         // domain's CODE object by name, sealed an entry from it and installed
+         // that domain's identity in three instructions; R75b did the same
+         // through the TYPE AUTHORITY; R76 re-stamped without binding at all.
+         // All three ate this value, and it is written HERE, at the Populate,
+         // not at a crossing -- which is why four crossing-side designs were
+         // refuted before this one. The crossing is where authority is SPENT;
+         // this is where it is GRANTED.
+         //
+         // R17-SAFE BY CONSTRUCTION: R17 was retracted for FORBIDDING
+         // cross-domain Bind, which made compartments one-way. This forbids
+         // nothing. It requires that sharing be DECLARED -- one set.domain per
+         // object -- which is what a loader does at load time anyway.
+         $veda_creating_domain[19:0] = ($veda_pcc_object == VEDA_OBJECT_NONE) ? VEDA_DOMAIN_BOOT
                                                                              : $veda_pcc_object[43:24];
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
                                  ($veda_pcc_object == VEDA_OBJECT_NONE) ||
@@ -2869,10 +2890,33 @@
          // choice for a stated reason: R62 gated WELL-FORMEDNESS, which applies to
          // everyone; this gates the VALIDITY OF AN AUTHORITY TEST, and Machine is
          // never window-tested at all.
+         // R76 -- AND THE OWNERSHIP QUESTION THIS SIGNAL NEVER ASKED. Every
+         // term above asks whether the ACTION is well-formed: is the object
+         // real, is the principal real, is the ODA window over this memory, is
+         // the Base still live. NOT ONE asked whether the actor OWNS what it
+         // re-stamps. Measured before the fix on BOTH layers: a region-1
+         // compartment refused an object narrowed to domain 0 executed
+         // set.domain <it> <- 1 at Machine with ZERO traps, and the identical
+         // bind then succeeded and read the secret. R75 forges an identity to
+         // satisfy the bind gate; this rewrote the gate's own input.
+         //
+         // R47's window does not cover it and its own comment says why: a
+         // policy write "needs authority over the MEMORY that descriptor
+         // names" -- memory, not policy. R45 recorded that two Object_IDs may
+         // name the same memory, so an ODA delegate could re-stamp objects
+         // belonging to other domains that merely live inside its window.
+         //
+         // Ambient is the one exempt principal because somebody must perform
+         // the initial delegation. An object still carrying VEDA_DOMAIN_ANY or
+         // VEDA_DOMAIN_BOOT is re-stampable only from ambient, since neither
+         // sentinel equals any real region.
+         $veda_setdom_not_owner = !(($veda_pcc_object == VEDA_OBJECT_NONE) ||
+                                    ($veda_odt_owner_domain == $veda_pcc_object[43:24]));
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
                                            ($veda_stale_authority ||
                                            !($priv || $veda_oda_authorized) || !$veda_odt_valid ||
-                                            $veda_oda_denies_old || $veda_domain_not_nameable);
+                                            $veda_oda_denies_old || $veda_domain_not_nameable ||
+                                            $veda_setdom_not_owner);
          $veda_odt_set_cow_violation = $is_veda_odt_set_cow &&
                                         ($veda_stale_authority ||
                                            !($priv || $veda_oda_authorized) || !$veda_odt_valid ||

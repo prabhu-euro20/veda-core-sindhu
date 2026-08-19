@@ -31,6 +31,23 @@ _start:
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- CODE_A
 
+    # ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND THIS THREAD'S CODE ════════════
+    # The switcher binds thread code objects BY NAME at resume time, from
+    # inside its own compartment. Ambient creation stamps VEDA_DOMAIN_BOOT
+    # since R75/R76, so that bind is no longer free -- boot has to say who may
+    # do it. Declared here, next to the object it is about.
+    #
+    # THE DECLARED DOMAIN IS 0, AND THAT IS THIS DEMONSTRATOR'S FLAT LAYOUT
+    # SHOWING THROUGH. Every object in this file is region 0, so switcher and
+    # threads are ONE principal to the hardware and a region-keyed rule cannot
+    # separate them here. DESIGN_07 records that as the open principal-
+    # granularity question; it is not something this declaration can fix.
+    #
+    # x1 already holds the Object_ID and x2/x5 are the populate's own scratch,
+    # reloaded immediately below -- this file uses all 32 registers.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+
     li   x1, 101
     li   x2, 0x8010070000400400            # Perms=Permit_Invoke only
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- DATA_A
@@ -57,6 +74,23 @@ _start:
     li   x1, 110
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- CODE_B
+
+    # ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND THIS THREAD'S CODE ════════════
+    # The switcher binds thread code objects BY NAME at resume time, from
+    # inside its own compartment. Ambient creation stamps VEDA_DOMAIN_BOOT
+    # since R75/R76, so that bind is no longer free -- boot has to say who may
+    # do it. Declared here, next to the object it is about.
+    #
+    # THE DECLARED DOMAIN IS 0, AND THAT IS THIS DEMONSTRATOR'S FLAT LAYOUT
+    # SHOWING THROUGH. Every object in this file is region 0, so switcher and
+    # threads are ONE principal to the hardware and a region-keyed rule cannot
+    # separate them here. DESIGN_07 records that as the open principal-
+    # granularity question; it is not something this declaration can fix.
+    #
+    # x1 already holds the Object_ID and x2/x5 are the populate's own scratch,
+    # reloaded immediately below -- this file uses all 32 registers.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
 
     li   x1, 111
     li   x2, 0x8011070000400400

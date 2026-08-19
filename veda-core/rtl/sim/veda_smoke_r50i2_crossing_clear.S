@@ -80,6 +80,24 @@ _start:
     li   x2, 0x800112000020000C            // Perms LOAD|STORE
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
 
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT now, so an object is no longer
+    // public by accident. This file needs FIVE declarations and the reason is
+    // structural: `setup:` below is RE-ENTERED after the first OCReturn, so on
+    // the second pass every one of these binds runs from INSIDE a compartment,
+    // whose identity is the sentry's object -- region 0.
+    li   x2, 0
+    li   x1, 140
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, 141
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, 142
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, 143
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, 144
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+
     bne  x27, x0, done                     // no trap is allowed in setup
 
 .balign 4

@@ -43,6 +43,18 @@ _start:
     la   x7, compartment
     li   x1, 180
     .insn r 0x0b, 0x0, 0x04, x5, x1, x7    // populate.fast -- CODE
+
+    // ═══ R75/R76 -- THE COMPARTMENT MUST BE ABLE TO RE-BIND ITSELF ═══════════
+    // PART A6 below re-Binds object 180 from INSIDE the compartment that object
+    // 180 IS, to prove a refused Destroy or Populate did not half-apply. Ambient
+    // creation stamps VEDA_DOMAIN_BOOT since R75/R76, so even a compartment's
+    // own code object is no longer bindable by default -- boot declares it.
+    // Region 0 is this file's layout; the Sail twin needs no declaration
+    // because its equivalent re-Bind runs from a trap handler, where
+    // veda_pcc_object is VEDA_OBJECT_NONE and the ambient arm already passes.
+    // The two files differ in structure, not in the rule they exercise.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
     la   x7, after_pad
     li   x1, 184
     .insn r 0x0b, 0x0, 0x04, x5, x1, x7    // populate.fast -- PART C landing

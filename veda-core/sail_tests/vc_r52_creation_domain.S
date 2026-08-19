@@ -42,7 +42,9 @@ _start:
     or   s9, t0, t1
 
     # ---- ambient: everything built here is created with NO compartment
-    #      active, so it gets VEDA_DOMAIN_ANY and stays shareable ----
+    #      active. Since R75/R76 that means VEDA_DOMAIN_BOOT, not
+    #      VEDA_DOMAIN_ANY -- shareable is now DECLARED, and the declaration
+    #      for the type authority is written below where it is created ----
     la   t0, compA
     slli t0, t0, 32
     li   t1, 0x02000402                     # Len 0x200, Execute|Invoke
@@ -61,9 +63,26 @@ _start:
     li   a1, 171                            # region-0 DATA
     li   a2, 0x800107000040040C
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2
-    li   a1, 172                            # type authority, ambient -> ANY
+    li   a1, 172                            # type authority, ambient
     li   a2, 0x8001080000400300
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2
+
+    # ═══ R75/R76 -- AND NOW BOOT MUST SAY SO OUT LOUD ════════════════════════
+    # The ambient arm used to hand out VEDA_DOMAIN_ANY, and CONTROL 3 below --
+    # R17's return path, the assertion that stops this policy repeating R17's
+    # retraction -- depended on that default. R75 measured what the default
+    # cost: a compartment bound ANOTHER DOMAIN'S CODE OBJECT by name, sealed an
+    # entry from it and installed that domain's identity, in three instructions.
+    # R75b did the same through the TYPE AUTHORITY -- this very object.
+    #
+    # So ambient creation now stamps VEDA_DOMAIN_BOOT, and an object that is
+    # genuinely shared is DECLARED shared. R52's architecture is unchanged and
+    # its claim still holds: the ambient arm is what keeps R17 closed. What
+    # changed is that the sharing is now a sentence somebody wrote rather than a
+    # value nobody chose. a1 is the populate block's own scratch, dead until
+    # reloaded below; x10 is free in this file (verified against every operand).
+    li   x10, 0xFFFFF                       # VEDA_DOMAIN_ANY, deliberately
+    .insn r 0x0b, 0x1, 0x06, x5, a1, x10    # set.domain 172 <- ANY
 
     li   a1, 16777246
     .insn i 0x0b, 0x5, x3, a1, 0

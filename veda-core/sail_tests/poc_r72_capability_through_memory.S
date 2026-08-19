@@ -1,18 +1,4 @@
 .include "veda_selfcheck_macros.S"
-# NOT RUN BY THE SUITE, DELIBERATELY. The runner globs vc_*.S; this is poc_*.
-#
-# A PASS here would mean THE ESCALATION WORKS. A suite whose green means the hole
-# is open is exactly the failure R73 recorded one finding earlier -- a test that
-# freezes an observation into a contract. This file is the MEASUREMENT, kept in
-# the repo rather than in a scratchpad so the evidence outlives the session, and
-# it is to be REWRITTEN as a vc_ negative test when the mechanism lands.
-#
-# Reproduce:
-#   as -march=rv64i_zicsr -I. -o /tmp/p.o <this file>
-#   ld -T ./veda_selfcheck.ld -o /tmp/p.elf /tmp/p.o
-#   sail_riscv_sim --config ./veda_test_sail.json --inst-limit 2000000 \
-#       --trace-instr --trace-gpr /tmp/p.elf
-#
 .section .text
 .global _start
 # R72 PROBE -- does a capability escape its domain THROUGH MEMORY?

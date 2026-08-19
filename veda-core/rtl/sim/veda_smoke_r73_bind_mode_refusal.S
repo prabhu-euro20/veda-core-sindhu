@@ -55,6 +55,14 @@ _start:
     li   x1, OPEN
     li   x2, 0x800111000040000C
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
+
+    // ═══ R75/R76 -- OPEN IS NOW DECLARED OPEN ════════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76. compB executes
+    // from a REGION 1 code object, so boot declares region 1 for the object
+    // compB is meant to bind. FOREIGN keeps its domain-0 stamp, which is the
+    // refusal this file exists to measure.
+    li   x2, 1
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
     li   x1, TYPEAUTH
     li   x2, 0x8001130000400300
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2

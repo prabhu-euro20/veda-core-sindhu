@@ -54,6 +54,19 @@ _start:
     la   x7, data_pad
     li   x1, 211
     .insn r 0x0b, 0x0, 0x04, x5, x1, x7
+
+    # ═══ R75/R76 -- THE OPEN OBJECT IS NOW DECLARED OPEN ═════════════════════
+    # This file's second control -- "an OPEN object from the same place must
+    # still bind" -- is R17's return path, and it used to rely on ambient
+    # creation handing out VEDA_DOMAIN_ANY. R75 measured what that default cost:
+    # a compartment bound another domain's CODE object by name, sealed an entry
+    # from it, and installed that domain's identity in three instructions.
+    # Ambient creation now stamps VEDA_DOMAIN_BOOT, so an object that is meant
+    # to be open says so. The control is unchanged in what it proves; only the
+    # openness moved from a default to a sentence. x8 is free here, verified
+    # against every instruction operand in the file.
+    li   x8, 0xFFFFF                      # VEDA_DOMAIN_ANY, deliberately
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x8   # set.domain 211 <- ANY
     li   x6, 0x100
     slli x6, x6, 16
     ori  x6, x6, 0x0300

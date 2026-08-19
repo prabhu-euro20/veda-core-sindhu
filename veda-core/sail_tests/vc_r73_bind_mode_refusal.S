@@ -92,6 +92,11 @@ _start:
     li   x1, SENTRY
     .insn i 0x0b, 0x5, x12, x1, 0
     .insn r 0x5b, 0x1, 0x15, x13, x12, x0
+    # R75/R76: boot DECLARES who may bind this. Ambient creation stamps
+    # VEDA_DOMAIN_BOOT now, so sharing is a declaration, not a default.
+    li   x10, 301
+    li   x11, 1
+    .insn r 0x0b, 0x1, 0x06, x14, x10, x11
     li   x31, 0x2000                         # retain only the sentry (R71)
     csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x8, x9

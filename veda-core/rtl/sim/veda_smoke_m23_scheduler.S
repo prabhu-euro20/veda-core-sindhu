@@ -49,6 +49,17 @@ _start:
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- CODE_A
 
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+
     li   x1, 111
     li   x2, 0x8011070000400400
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- DATA_A
@@ -75,6 +86,13 @@ _start:
     li   x1, 113
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate x5, x1, x2  -- CODE_B
+
+    // R75/R76 -- thread B's code object needs the same declaration. The switcher
+    // binds BOTH threads' code objects by name at resume, and a lexical scan
+    // sees only one of them because the other resume is reached by a jump. This
+    // one was found by running the test, not by reading it.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
 
     li   x1, 114
     li   x2, 0x8011090000400400

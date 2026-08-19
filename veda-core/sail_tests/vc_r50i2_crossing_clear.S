@@ -60,6 +60,31 @@ _start:
     or   x2, x6, x7
     li   x1, SECRET
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
+
+    # ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    # Ambient creation now stamps VEDA_DOMAIN_BOOT instead of VEDA_DOMAIN_ANY,
+    # so an object is no longer public by accident. This file needs FIVE
+    # declarations rather than one, and the reason is structural: `setup:` below
+    # is RE-ENTERED from `rebuild` after the first OCReturn, so on the second
+    # pass every one of these binds runs from INSIDE a compartment. The
+    # compartment's identity is the sentry's object, region 0, so region 0 is
+    # what boot declares.
+    #
+    # x1/x2/x5 are reused deliberately: this file uses all 32 registers, and
+    # these three are the populate block's own scratch, dead from here until
+    # `setup:` reloads them.
+    li   x2, 0
+    li   x1, AUTH
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, C_CODE
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, C_DATA
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, SENTRY
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+    li   x1, SECRET
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+
     bne  x27, x0, fail
 setup:
     li   x1, AUTH
@@ -81,6 +106,11 @@ setup:
     li   x19, 1
     beq  x16, x19, round2
     # ROUND 1: retain ONLY the sentry. c10 must NOT survive.
+    # R75/R76: boot DECLARES who may bind this. Ambient creation stamps
+    # VEDA_DOMAIN_BOOT now, so sharing is a declaration, not a default.
+    li   x11, 763
+    li   x14, 0
+    .insn r 0x0b, 0x1, 0x06, x29, x11, x14
     li   x31, 0x2000                        # bit 13
     csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4

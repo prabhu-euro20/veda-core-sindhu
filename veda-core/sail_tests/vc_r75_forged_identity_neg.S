@@ -1,6 +1,4 @@
 .include "veda_selfcheck_macros.S"
-# NOT RUN BY THE SUITE, DELIBERATELY. The runner globs vc_*.S; this is poc_*.
-#
 # A PASS here would mean THE ESCALATION WORKS. A suite whose green means the hole
 # is open is exactly the failure R73 recorded one finding earlier -- a test that
 # freezes an observation into a contract. This file is the MEASUREMENT, kept in
@@ -135,12 +133,10 @@ compB:
 
     # ═══ THE FORGE -- three instructions, and the only input is a NAME ═══
     li   x1, CODE_A
-    .insn i 0x0b, 0x5, x9, x1, 0           # veda.bind c9, CODE_A  (owner ANY)
-    .insn r 0x5b, 0x1, 0x15, x9, x9, x0    # csealentry c9 -- authorised by tag
-    li   x31, 0
-    csrw 0x8CA, x31
-    .insn r 0x5b, 0x1, 0x16, x0, x9, x0    # ocreturn c9 -- INSTALLS domain A
-    j    fail
+    .insn i 0x0b, 0x5, x9, x1, 1           # veda.bind.notrap c9, CODE_A
+    .insn r 0x5b, 0x0, 0x03, x22, x9, x0   # MUST be 0 -- A's code is not public
+    mv   x20, x27                          # and the quiet form added no trap
+    ecall                                  # -> verdict
 
 .balign 4
 forged:
@@ -174,14 +170,16 @@ trap_handler:
 
 .balign 4
 verdict:
+    # ═══ INVERTED BY R75/R76 INCREMENT 1 ═══════════════════════════════════
+    # This file MEASURED AN ESCALATION and passed when the escalation worked.
+    # The mechanism landed, so it is now a NEGATIVE test: same instructions,
+    # same objects, opposite verdict. The quiet Bind form is used for the forge
+    # so the file can keep running and ASSERT the refusal rather than die on it.
     bnez x28, fail                         # setup was clean
-    bnez x21, fail                         # CONTROL: B was refused by name
-    bnez x24, fail                         # and the refusal was the quiet form
-    li   x18, 1
-    bne  x22, x18, fail                    # THE FINDING: the same bind SUCCEEDED
-    li   x18, 0xC0FFEE
-    bne  x23, x18, fail                    # and the secret was read
-    bnez x20, fail                         # with ZERO traps along the whole chain
+    bnez x21, fail                         # CONTROL: B refused the object by name
+    bnez x24, fail                         # and that refusal was the quiet form
+    bnez x22, fail                         # THE FORGE: no capability was minted
+    bne  x20, x24, fail                    # and it cost no trap either
     RVMODEL_HALT_PASS
 fail:
     RVMODEL_HALT_FAIL

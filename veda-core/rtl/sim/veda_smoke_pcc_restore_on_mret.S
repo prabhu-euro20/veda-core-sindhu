@@ -41,6 +41,17 @@ _start:
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # veda.odt.populate -- type-authority
 
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
+
     # ============================== PHASE 1 ==============================
     la   t0, phase1_entry
     slli t0, t0, 32
@@ -101,9 +112,31 @@ phase2_setup:
     li   x1, 143
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # -- CODE_2
+
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
     li   x1, 144
     li   x2, 0x8003000000400400
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # -- DATA_2
+
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
 
     li   x1, 140
     .insn i 0x0b, 0x5, x2, x1, 0
@@ -149,9 +182,31 @@ phase3_setup:
     li   x1, 145
     mv   x2, t0
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # -- CODE_3
+
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
     li   x1, 146
     li   x2, 0x8004000000400400
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2   # -- DATA_3
+
+    // ═══ R75/R76 -- BOOT DECLARES WHO MAY BIND ═══════════════════════════════
+    // Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, so an object is no
+    // longer public by accident: R75 bound another domain's CODE object by name
+    // and installed that domain's identity in three instructions, and R75b did
+    // the same through a TYPE AUTHORITY. Objects a compartment must bind are now
+    // DECLARED, next to where they are created. Region 0 is this file's flat
+    // layout showing through -- DESIGN_07 records principal granularity as the
+    // open question that no declaration can settle.
+    li   x2, 0
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x2
 
     li   x1, 140
     .insn i 0x0b, 0x5, x2, x1, 0

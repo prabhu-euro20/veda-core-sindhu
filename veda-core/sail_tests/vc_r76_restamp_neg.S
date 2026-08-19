@@ -1,10 +1,4 @@
 .include "veda_selfcheck_macros.S"
-# NOT RUN BY THE SUITE, DELIBERATELY. The runner globs vc_*.S; this is poc_*.
-# A PASS here would mean THE ESCALATION WORKS.
-.section .text
-.global _start
-# R76 -- THE POLICY FIELD THE WHOLE DOMAIN MODEL RESTS ON HAS NO OWNERSHIP GATE.
-#
 # veda.odt.set.domain's COMPLETE authorisation, veda_ocl_insts.sail:1252, is
 #     if not(cur_privilege == Machine | veda_oda_authorized()) then Illegal_Instruction()
 # and NOWHERE in the sixty-line clause is the actor's own domain compared to the
@@ -95,8 +89,8 @@ compB:
     # ═══ ARM 1, AT MACHINE -- do not forge the identity, REWRITE THE POLICY ═══
     li   x1, SECRET
     li   x4, 1                             # "this object is mine now"
-    .insn r 0x0b, 0x1, 0x06, x5, x1, x4    # veda.odt.set.domain SECRET <- 1
-    mv   x20, x27                          # MUST still be 0 -- it was allowed
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x4    # set.domain SECRET <- 1: MUST TRAP
+    mv   x20, x27                          # MUST have grown -- it is refused
     li   x1, SECRET
     .insn i 0x0b, 0x5, x6, x1, 1
     .insn r 0x5b, 0x0, 0x03, x22, x6, x0   # 1 = the re-stamp worked
@@ -139,16 +133,19 @@ trap_handler:
 
 .balign 4
 verdict:
-    bnez x28, fail
-    bnez x21, fail                         # CONTROL: refused before the re-stamp
-    bnez x20, fail                         # ARM 1: set.domain was ALLOWED at Machine
+    # ═══ INVERTED BY R75/R76 INCREMENT 1 ═══════════════════════════════════
+    # This file MEASURED AN ESCALATION and passed when the escalation worked.
+    # The mechanism landed, so it is now a NEGATIVE test: same instructions,
+    # same objects, opposite verdict. The quiet Bind form is used for the forge
+    # so the file can keep running and ASSERT the refusal rather than die on it.
+    bnez x28, fail                         # setup was clean
+    bnez x21, fail                         # CONTROL: B refused the object by name
     li   x18, 1
-    bne  x22, x18, fail                    # and the bind then SUCCEEDED
-    li   x18, 0xC0FFEE
-    bne  x23, x18, fail                    # and the secret was read
-    li   x18, 1
+    bne  x20, x18, fail                    # the re-stamp TRAPPED, exactly once
+    bnez x22, fail                         # and the bind still fails afterwards
+    bnez x23, fail                         # and nothing was read
     sub  x19, x24, x25
-    bne  x19, x18, fail                    # ARM 2: at User it trapped, exactly once
+    bne  x19, x18, fail                    # ARM 2 at User still traps once
     RVMODEL_HALT_PASS
 fail:
     RVMODEL_HALT_FAIL

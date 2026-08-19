@@ -1,6 +1,4 @@
 .include "veda_selfcheck_macros.S"
-# NOT RUN BY THE SUITE, DELIBERATELY. The runner globs vc_*.S; this is poc_*.
-#
 # A PASS here would mean THE ESCALATION WORKS. A suite whose green means the hole
 # is open is exactly the failure R73 recorded one finding earlier -- a test that
 # freezes an observation into a contract. This file is the MEASUREMENT, kept in
@@ -15,27 +13,19 @@
 #
 .section .text
 .global _start
-# R75b -- AND THE CALL PATH IS NO BETTER. THIS FILE REFUTES R75's FIRST DIAGNOSIS.
+# R75b -- AND THE CALL PATH IS NO BETTER. NOW A NEGATIVE TEST.
 #
-# R75 recorded an asymmetry: OCInvoke demands a sealed pair, mintable only with
-# PERM_SEAL, so the pair is "evidence that the owning domain minted and handed
-# over an entry"; OCReturn demands only a sentry. The proposed fix was to make
-# the return path symmetric with the call path.
+# R75 recorded an asymmetry -- OCInvoke demands a sealed pair, mintable only
+# with PERM_SEAL, so the pair is "evidence that the owning domain minted and
+# handed over an entry" -- and proposed making the return path symmetric.
+# THAT DIAGNOSIS WAS FALSE, and this file is the measurement that killed it: the
+# TYPE AUTHORITY is an ambient object too, so a compartment bound it BY NAME,
+# minted its OWN matching sealed pair from A's code object, and OCInvoked in.
+# A sealed pair is evidence of nothing while the seal authority is name-bindable.
 #
-# THAT DIAGNOSIS IS FALSE IN THE DEFAULT CONFIGURATION, and this file is the
-# measurement that killed it. The TYPE AUTHORITY object is created ambiently too,
-# so it carries owner_domain = VEDA_DOMAIN_ANY like everything else, so compartment
-# B BINDS IT BY NAME and mints its OWN matching sealed pair. Measured: ocinvoke
-# succeeds, the previously-refused bind then reads cgettag 1, the secret reads
-# 0xC0FFEE, and the whole run takes one trap -- the final ecall.
-#
-# A sealed pair is evidence of NOTHING while the seal authority is bindable by
-# name. Every "make OCReturn symmetric with OCInvoke" proposal is worthless: it
-# would make the return path as strong as a call path that is already broken.
-#
-# The original R75 header follows, kept because it is what was believed.
-#
-# R75 -- THE RETURN PATH IS AN ENTRY PATH, AND IT HAS NO ADMISSION CONTROL.
+# Since R75/R76 increment 1 the ambient creation domain is VEDA_DOMAIN_BOOT, so
+# neither ingredient is public and the pair cannot be assembled at all. Same
+# instructions, same objects, opposite verdict.
 #
 # Every domain question this machine asks is asked of veda_pcc_object: the bind
 # gate (veda_regs.sail:1165-1168), the creating domain a Populate records
@@ -90,9 +80,6 @@ _start:
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
     li   x1, TYPEAUTH
     li   x2, 0x8001130000400300
-    .insn r 0x0b, 0x0, 0x03, x5, x1, x2
-    li   x1, 304                           # an ambient INVOKE-only data object
-    li   x2, 0x8001140000400400
     .insn r 0x0b, 0x0, 0x03, x5, x1, x2
     # ---- A's CODE object. REGION 0, Perms EXECUTE|INVOKE, owner_domain left at
     #      the default VEDA_DOMAIN_ANY -- exactly as every shipped code fixture
@@ -156,23 +143,17 @@ compB:
     .insn r 0x5b, 0x0, 0x03, x21, x5, x0   # MUST be 0
     mv   x24, x27                          # and R73 says this must not trap
 
-    # ═══ VARIANT -- FORGE A SEALED PAIR AND USE OCINVOKE INSTEAD.
-    #     If OCInvoke's sealed pair is genuinely "evidence that the owning
-    #     domain minted and handed over an entry", this must FAIL: B was handed
-    #     nothing. But the type authority is an ambient object too, and ambient
-    #     objects are created with owner_domain = ANY.
+    # ═══ THE FORGE -- three instructions, and the only input is a NAME ═══
     li   x1, TYPEAUTH
-    .insn i 0x0b, 0x5, x7, x1, 0           # bind the SEAL authority BY NAME
+    .insn i 0x0b, 0x5, x7, x1, 1           # veda.bind.notrap c7, TYPEAUTH
+    .insn r 0x5b, 0x0, 0x03, x22, x7, x0   # MUST be 0 -- the SEAL authority is
+                                           # not public, so no matching sealed
+                                           # pair can be minted at all
     li   x1, CODE_A
-    .insn i 0x0b, 0x5, x8, x1, 0           # bind A's code BY NAME
-    li   x1, 304
-    .insn i 0x0b, 0x5, x9, x1, 0           # bind an INVOKE-only data object
-    .insn r 0x5b, 0x1, 0x10, x10, x8, x7   # cseal c10, c8, c7
-    .insn r 0x5b, 0x1, 0x10, x11, x9, x7   # cseal c11, c9, c7  -- matching otype
-    li   x31, 0
-    csrw 0x8CA, x31
-    .insn r 0x5b, 0x1, 0x12, x0, x10, x11  # ocinvoke -- a pair B MINTED ITSELF
-    j    fail
+    .insn i 0x0b, 0x5, x9, x1, 1           # veda.bind.notrap c9, CODE_A
+    .insn r 0x5b, 0x0, 0x03, x23, x9, x0   # MUST be 0 -- nor is A's code object
+    mv   x20, x27                          # and neither refusal cost a trap
+    ecall                                  # -> verdict
 
 .balign 4
 forged:
@@ -206,14 +187,17 @@ trap_handler:
 
 .balign 4
 verdict:
+    # ═══ INVERTED BY R75/R76 INCREMENT 1 ═══════════════════════════════════
+    # This file MEASURED AN ESCALATION and passed when the escalation worked.
+    # The mechanism landed, so it is now a NEGATIVE test: same instructions,
+    # same objects, opposite verdict. The quiet Bind form is used for the forge
+    # so the file can keep running and ASSERT the refusal rather than die on it.
     bnez x28, fail                         # setup was clean
-    bnez x21, fail                         # CONTROL: B was refused by name
-    bnez x24, fail                         # and the refusal was the quiet form
-    li   x18, 1
-    bne  x22, x18, fail                    # THE FINDING: the same bind SUCCEEDED
-    li   x18, 0xC0FFEE
-    bne  x23, x18, fail                    # and the secret was read
-    bnez x20, fail                         # with ZERO traps along the whole chain
+    bnez x21, fail                         # CONTROL: B refused the object by name
+    bnez x24, fail                         # and that refusal was the quiet form
+    bnez x22, fail                         # THE FORGE: no SEAL authority minted
+    bnez x23, fail                         # and no code capability either
+    bne  x20, x24, fail                    # and neither cost a trap
     RVMODEL_HALT_PASS
 fail:
     RVMODEL_HALT_FAIL

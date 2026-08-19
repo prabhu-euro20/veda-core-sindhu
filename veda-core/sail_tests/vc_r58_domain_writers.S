@@ -77,6 +77,17 @@ _start:
     li   a2, 0x8001080000400300
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2
 
+    # ═══ R75/R76 -- THE SHARING IS NOW DECLARED, NOT INHERITED ═══════════════
+    # Ambient creation stamps VEDA_DOMAIN_BOOT since R75/R76, because the old
+    # VEDA_DOMAIN_ANY default was the single value every measured escalation
+    # consumed -- R75b forged a domain identity by binding a TYPE AUTHORITY of
+    # exactly this shape by name. This file's CONTROL still needs the object to
+    # be bindable from inside a compartment ("the word that stops a blanket
+    # refusal from passing this file"), so boot says so explicitly.
+    # x10 is free in this file, verified against every instruction operand.
+    li   x10, 0xFFFFF                       # VEDA_DOMAIN_ANY, deliberately
+    .insn r 0x0b, 0x1, 0x06, x5, a1, x10    # set.domain 202 <- ANY
+
     li   a1, 16777276
     .insn i 0x0b, 0x5, x3, a1, 0
     li   a1, 16777277

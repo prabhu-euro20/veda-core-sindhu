@@ -70,6 +70,11 @@ _start:
     .insn r 0x5b, 0x1, 0x10, x4, x1, x2   # cseal c4, c1, c2  -- sealed region-1 DATA
 
     # -- Enter the region-1 compartment. CRBR must load region 1.
+    # R75/R76: boot DECLARES who may bind this. Ambient creation stamps
+    # VEDA_DOMAIN_BOOT now, so sharing is a declaration, not a default.
+    li   x11, 40
+    li   x12, 1
+    .insn r 0x0b, 0x1, 0x06, x13, x11, x12
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4   # ocinvoke c3, c4
 
     j    fail                              # OCInvoke must jump, not fall through
