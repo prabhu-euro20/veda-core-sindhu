@@ -1,33 +1,23 @@
 .include "veda_selfcheck_macros.S"
 .section .text
 .global _start
-# NOT RUN BY THE SUITE. The runner globs vc_*.S; this is poc_*. It CANNOT pass,
-# and why it cannot is the finding.
+# R84 -- A CAPABILITY REACHES A DEVICE, AND THIS IS THE FIRST TEST IN THIS
+#        PROJECT THAT RUNS ITS WHOLE STEADY STATE UNDER PURECAP AND HALTS
+#        WITHOUT EVER TURNING IT OFF.
 #
-# R84 -- A CAPABILITY CANNOT REACH A DEVICE, SO A PURECAP MACHINE HAS NO I/O.
+# It began life as poc_r84_purecap_has_no_io.S and COULD NOT PASS. Every row
+# below succeeded even then -- traced instruction by instruction -- and the test
+# still spun forever, because RVMODEL_HALT_PASS_PURECAP signals through OCS.D and
+# Veda's OCL/OCS family called read_ram/write_ram DIRECTLY. MMIO routing lives one
+# layer up, at sys/mem.sail:461, and covers the CLINT, the signature region and
+# HTIF. So a capability reached RAM and nothing else, while purecap forbids the
+# ordinary accesses that CAN reach a device: the machine had no way to say it had
+# finished.
 #
-# This began as R83 increment 1: the first test to run its whole steady state
-# under purecap and halt without ever turning it off. Every row below PASSES --
-# traced and confirmed: the capability store and load work under purecap, the
-# ordinary ld is refused with cause 0x07, and execution reaches
-# self_loop_pass_pc_0. Then it spins forever, because the halt signal never
-# arrives.
-#
-# WHY: RVMODEL_HALT_PASS_PURECAP signals through OCS.D, and Veda's whole OCL/OCS
-# family calls read_ram/write_ram DIRECTLY (postlude/step_ext.sail says so, and
-# says it was deliberate). MMIO routing lives one layer up, in the checked path
-# at sys/mem.sail:461 -- `if within_mmio_writable(paddr, w) then mmio_write(...)
-# else write_ram(wk, paddr, w, value, meta)` -- and within_mmio_writable covers
-# the CLINT, the signature region and HTIF (sys/platform.sail:354-357).
-#
-# So a capability access reaches RAM and NOTHING ELSE. Combined with purecap,
-# which forbids the ordinary accesses that CAN reach a device, a Veda machine
-# under purecap has no console, no timer and no way to say it finished.
-#
-# Until now no test could END with purecap on, because RVMODEL_HALT_PASS signals
-# with two ordinary `sw` stores and purecap refuses them. Eight of the twelve
-# files that touch 0x7C5 enable purecap and then disable it purely to halt. So
-# the machine's capability-only steady state was never executed.
+# VEDA_OCL/VEDA_OCS now route through mem_read_priv_meta /
+# mem_write_value_priv_meta -- the upstream checked path, already tag-carrying and
+# already MMIO-aware. The file is kept verbatim apart from this header, so the
+# ONLY thing that changed between "cannot pass" and "passes" is the memory path.
 #
 #   ROW A  purecap really is on            -- 0x7C5 reads 1
 #   ROW B  an ordinary ld is refused HERE  -- 1 trap, cause 0x07
