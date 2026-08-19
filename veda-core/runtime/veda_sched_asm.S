@@ -62,6 +62,31 @@ veda_sched_init_asm:
     li   a0, 161
     .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0,t0
 
+    # ---- R87: DECLARE THE TWO THREAD CODE OBJECTS SHAREABLE ----
+    # R75/R76 increment 1 made ambient creation stamp VEDA_DOMAIN_BOOT instead of
+    # VEDA_DOMAIN_ANY, so an object is no longer public by accident. These two are
+    # populated HERE, from boot, where veda_pcc_object is the ambient sentinel --
+    # but they are BOUND from `resume_0`/`resume_1`, which on every cycle after the
+    # first are reached through `after_scheduler_return`, i.e. through an OCRETURN.
+    # OCReturn installs veda_pcc_object = the sentry's Object_ID (168, region 0),
+    # so the bind gate's ambient arm no longer applies and its domain arm compares
+    # VEDA_DOMAIN_BOOT against region 0 and refuses.
+    #
+    # MEASURED, not reasoned about: with the four earlier repairs in place this
+    # file trapped at `veda.bind c12, 161` with mcause 0x18 and mtval 0x18b --
+    # cap_idx 12, cause 0x0B DOMAIN_VIOLATION -- while the IDENTICAL bind of 160
+    # thirty instructions earlier succeeded, because the FIRST resume_0 is reached
+    # by a direct `j` with PCC still nameless.
+    #
+    # Region 0 rather than VEDA_DOMAIN_ANY, matching both test mirrors: the sentry
+    # lives in region 0, so this is the narrowest declaration that works. Sharing
+    # is a DECLARATION, which is R52's own doctrine.
+    li   a1, 0
+    li   a0, 160
+    .insn r 0x0b, 0x1, 0x06, x5, a0, a1   # veda.odt.set.domain 160 -> region 0
+    li   a0, 161
+    .insn r 0x0b, 0x1, 0x06, x5, a0, a1   # veda.odt.set.domain 161 -> region 0
+
     # ---- SCHEDULER: Object_ID 162(CODE)/163(DATA)/164(type-authority) ----
     la   t0, scheduler_entry
     slli t0, t0, 32
