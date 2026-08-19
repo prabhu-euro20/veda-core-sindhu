@@ -5660,8 +5660,35 @@
          // the whole word and calling the difference agreement or a defect.
          $mstatus_val[63:0] = {51'b0, $mstatus_mpp, 3'b0, $mstatus_mpie, 3'b0, $mstatus_mie, 3'b0};
 
+         //  R80 -- MODE IS READ-ONLY ZERO. The write arm used to store
+         //  >>1$csr_wdata VERBATIM, so mtvec[1:0] became part of the trap
+         //  TARGET ADDRESS: $alt_pc below is $mtvec raw, with no MODE decode
+         //  and no +4*cause arm anywhere in this file. RISC-V Privileged
+         //  section 3.1.7 forbids exactly that -- "the CSR contains only bits
+         //  XLEN-1 through 2 of the address BASE. When used as an address, the
+         //  lower two bits are filled with zeroes" -- and section 3.1.7 also
+         //  permits the fix outright: "If mtvec is writable, the set of values
+         //  the register may hold can vary by implementation."
+         //
+         //  MEASURED, not reasoned about. Two probes on the two real
+         //  simulators, same ELF:
+         //    csrwi mtvec,2 ; csrr  -> Sail 0x0        RTL 0x2
+         //    MODE=0b01 Vectored, a LEGAL and (formerly) SUPPORTED mode that
+         //    BOTH layers stored identically as 0x80000051 -- then one ecall:
+         //    Sail entered the handler at 0x80000050 and returned 0xC0DE;
+         //    this core set pc = 0x80000051, fetched ONE BYTE INTO the handler
+         //    from its byte-granular $instr_elf array, and never returned.
+         //  A divergence that ends execution on the trap path -- the recovery
+         //  path -- is the worst place in the machine to have one.
+         //
+         //  Sail is made Direct-only in the same increment, by setting
+         //  mtvec.vectored.supported=false in both configs, so legalize_tvec's
+         //  TV_Vector arm restores the old MODE (0 from reset). The two layers
+         //  then agree BY CONSTRUCTION rather than by test. The alignment half
+         //  of legalize_tvec is dead code here and needs no mirror: both
+         //  configs set base_alignment=2 and the mask fires only when it is > 2.
          $mtvec[63:0] = $reset ? 64'b0 :
-                        (>>1$csr_write_en && >>1$csr_is_mtvec && !(>>1$veda_csr_escape_violation)) ? >>1$csr_wdata :
+                        (>>1$csr_write_en && >>1$csr_is_mtvec && !(>>1$veda_csr_escape_violation)) ? {>>1$csr_wdata[63:2], 2'b0} :
                                                                   >>1$mtvec;
          // RTL Milestone 25 mirror: mscratch, byte-for-byte structural
          // copy of $mtvec's own pattern above -- no hardware-capture

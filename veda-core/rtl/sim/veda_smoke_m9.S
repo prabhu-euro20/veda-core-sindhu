@@ -29,14 +29,24 @@ _start:
     li    t1, 0xFF00
     bne   t0, t1, fail            // CSRRS must return the OLD value, not the new one
     csrr  t1, mtvec
-    li    t2, 0xFFFF
-    bne   t1, t2, fail             // confirms the OR actually landed (0xFF00|0x00FF=0xFFFF)
+    // R80: mtvec MODE is read-only zero (Direct-only), so the OR lands on
+    // bits 63:2 only -- 0xFF00|0x00FF = 0xFFFF, WARL-legalised to 0xFFFC.
+    // The CSRRS semantics under test are unchanged; only the WARL mask is new.
+    // This one line is the entire corpus cost of R80, and it is the right cost:
+    // the old expectation asserted a value RISC-V Privileged 3.1.7 forbids
+    // mtvec to hold.
+    li    t2, 0xFFFC
+    bne   t1, t2, fail             // confirms the OR actually landed, MODE masked
 
     // CSRRS with rs1=x0 (the real `csrr` pseudo-instruction) must NOT
     // write the CSR at all -- reading mtvec again after a csrr must
     // show it unchanged.
+    // R80: SECOND SITE. The value is the WARL-legalised 0xFFFC, same as above.
+    // Missing this one is exactly the R68 shape -- a rule applied to one site of
+    // two -- and the suite caught it on the first run, which is why the run
+    // happens before the claim.
     csrr  t1, mtvec
-    li    t2, 0xFFFF
+    li    t2, 0xFFFC
     bne   t1, t2, fail
 
     // -- Part 2: install the real trap handler, then trigger a real

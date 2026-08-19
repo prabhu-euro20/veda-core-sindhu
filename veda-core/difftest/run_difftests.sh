@@ -44,6 +44,7 @@ p20_oda_scope.S         AGREE      R47 CLOSED: the ODA's window is load-bearing 
 p22_csetbounds_width.S  AGREE      R53 CLOSED: CSetBounds is computed at the widened widths on both layers
 p23_oclear.S            AGREE      R50 increment 1: OCLEAR zeroes the VALUE, keeps otype UNSEALED
 p21_oda_crossing.S      AGREE      R48 CLOSED cross-layer: the ODA is cleared at every crossing
+p24_mtvec_mode.S        AGREE      R80 CLOSED: mtvec MODE is read-only zero on both layers. Before
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and

@@ -68,8 +68,15 @@
         "supported": true,
         "base_alignment": 2
       },
+      // R80 -- DIRECT-ONLY. RISC-V Privileged section 3.1.7 permits this outright:
+      // "If mtvec is writable, the set of values the register may hold can vary
+      // by implementation." CHERIoT ISA v1.0 section 7.10 takes the same route.
+      // Measured reason, not preference: the RTL uses mtvec as a raw trap target
+      // with no MODE decode, so a Vectored write that BOTH layers stored
+      // identically sent Sail into the handler and the RTL one byte into it,
+      // permanently. Direct-only makes the two layers agree by construction.
       "vectored": {
-        "supported": true,
+        "supported": false,
         "base_alignment": 2
       }
     },
