@@ -189,7 +189,7 @@ _start:
     // measures a different mechanism, so it declares RETAIN ALL. The burden
     // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x0, x1   # ocinvoke c0, c1
     j    fail_halt                          # must NOT be reached
 
@@ -261,7 +261,7 @@ scheduler_entry:
     xori x24, x24, 1
     .insn r 0x0b, 0x3, 0x01, x24, x8, x23  # ocs.d c8, x23(=0), x24  -- store toggled thread_index
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x10, x0   # ocreturn c10
     j    fail_halt                          # must NOT be reached
 
@@ -305,7 +305,7 @@ invoke_scheduler:
 
     .insn r 0x5b, 0x1, 0x15, x10, x9, x0  # csealentry c10, c9  -- mint fresh return sentry
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x4, x5   # ocinvoke c4, c5     -- invoke SCHEDULER
     j    fail_halt                          # must NOT be reached (scheduler must OCRETURN)
 
@@ -349,7 +349,7 @@ do_resume:
     .insn r 0x5b, 0x1, 0x0a, x11, x11, x31  # oca c11, c11, x31
     .insn r 0x5b, 0x1, 0x15, x11, x11, x0   # csealentry c11, c11
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x11, x0    # ocreturn c11
     j    fail_halt
 

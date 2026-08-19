@@ -55,7 +55,7 @@ ocreturn_fault:
     // measures a different mechanism, so it declares RETAIN ALL. The burden
     // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x1, x0  # ocreturn c1  -- c1 was never bound, untagged -- must TRAP
     li   x22, 0xBAD1                      # must NOT be reached directly
     j    done

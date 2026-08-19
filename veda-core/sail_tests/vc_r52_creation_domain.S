@@ -86,7 +86,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x8, x9     # ocinvoke -> A, in REGION 1
 
 .balign 4
@@ -104,23 +104,51 @@ compA:
     mv   s3, s0                             # traps inside A: must stay 0
 
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x12, x13   # ocinvoke -> B, in REGION 0
 
 .balign 4
 compB:
     # A different domain. Bind A's object BY NAME -- the whole point.
+    #
+    # ═══ R73 RE-AIMED, AND THE RE-AIM MAKES THIS FILE STRONGER ═══
+    #
+    # This block used to make ONE attempt, with Bind-NoTrap, and assert both a
+    # cleared tag and exactly one trap. Two things were wrong with that.
+    #
+    # First, the refusal is now MODE-DEPENDENT (R73): a domain refusal traps for
+    # plain Bind and soft-fails for Bind-NoTrap, because choosing mode 0b01 IS
+    # the caller's request for an answer instead of a fault. So one attempt can
+    # no longer test both halves.
+    #
+    # Second -- and this is the part worth keeping -- THE OLD TAG ASSERTION
+    # COULD NOT FAIL. The bind trapped, a trap leaves rd untouched, and c1 was
+    # never bound to anything, so `cgettag c1` read the architectural reset
+    # value. It asserted 0 against a register that was already 0 for reasons
+    # having nothing to do with the gate. Only the trap count was load-bearing.
+    # The quiet form below fixes that by loading a REAL tagged capability first,
+    # so a 0 afterwards proves the soft-fail genuinely WROTE the register.
+    #
+    # THE LOUD FORM -- plain Bind, hard-trap, rd untouched.
     li   a1, 16777256
-    .insn i 0x0b, 0x5, x1, a1, 1            # veda.bind.notrap c1
-    .insn r 0x5b, 0x0, 0x03, s4, x1, x0     # MUST be 0
-    mv   s5, s0                             # and it must have trapped, exactly once
+    .insn i 0x0b, 0x5, x1, a1, 0            # veda.bind c1 -- PLAIN, must trap
+    mv   s5, s0                             # exactly one trap, the refusal
 
     # CONTROL 3 -- R17'S RETURN PATH, and this is the assertion that stops this
     # policy from repeating R17's retraction. An AMBIENT-created object must
     # still bind from inside a compartment, or compartments become one-way.
+    # It doubles as the loaded-register precondition for the quiet form below.
     li   a1, 172
-    .insn i 0x0b, 0x5, x2, a1, 1
+    .insn i 0x0b, 0x5, x2, a1, 0
     .insn r 0x5b, 0x0, 0x03, s6, x2, x0     # MUST be 1
+
+    # THE QUIET FORM -- same refusal, mode 0b01, and it must NOT trap. c2 holds
+    # the genuine ambient capability asserted one line above, so a cleared tag
+    # here is evidence the soft-fail wrote, not evidence that nothing happened.
+    li   a1, 16777256
+    .insn i 0x0b, 0x5, x2, a1, 1            # veda.bind.notrap c2 -- foreign domain
+    .insn r 0x5b, 0x0, 0x03, s4, x2, x0     # MUST be 0 -- the soft-fail WROTE it
+    mv   s7, s0                             # MUST still be 1 -- no NEW trap
     ecall
 
 .balign 4
@@ -143,7 +171,9 @@ verdict:
     bnez s3, check_fail                     # and nothing trapped inside A
     bnez s4, check_fail                     # THE FINDING: B was refused
     li   t4, 1
-    bne  s5, t4, check_fail                 # exactly one trap, the refusal
+    bne  s5, t4, check_fail                 # exactly one trap, the LOUD refusal
+    li   t4, 1
+    bne  s7, t4, check_fail                 # R73: the QUIET refusal added none
     li   t4, 1
     bne  s6, t4, check_fail                 # CONTROL 3: the ambient object still binds
     RVMODEL_HALT_PASS

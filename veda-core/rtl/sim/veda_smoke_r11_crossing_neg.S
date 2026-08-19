@@ -92,7 +92,7 @@ _start:
     // measures a different mechanism, so it declares RETAIN ALL. The burden
     // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4    // ocinvoke c3, c4 -- must TRAP
     li   x13, 1
     bne  x20, x13, fail                    // exactly one trap
@@ -122,7 +122,7 @@ _start:
     .insn r 0x0b, 0x1, 0x05, x5, x1, x0    // veda.odt.page.out
 
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x9, x0    // ocreturn c9 -- must TRAP
     li   x13, 3
     bne  x20, x13, fail
@@ -157,7 +157,7 @@ _start:
     .insn r 0x0b, 0x0, 0x04, x5, x1, x7    // repopulate: valid + RESIDENT again
 
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x15, x4   // ocinvoke c15, c4 -- must TRAP 0x02
     li   x13, 4
     bne  x20, x13, fail
@@ -195,7 +195,7 @@ _start:
     // ═══ PART C: the positive control -- 162 is live and resident ═══
     li   x23, 0x600D
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x11, x4   // ocinvoke c11, c4 -- must SUCCEED
     j    fail                              // fell through without jumping
 

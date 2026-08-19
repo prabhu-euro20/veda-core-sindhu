@@ -92,7 +92,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x7, x8  # ocinvoke c7, c8  -- narrows PCC to [landing_pad, landing_pad+0x40)
 
 landing_pad:

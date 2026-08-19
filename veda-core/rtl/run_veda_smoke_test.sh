@@ -694,6 +694,16 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r67.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R67 trap frame owner)"
 vvp "$SIM/sim_r67.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r67_frame_owner.hex" | tee -a "$RUNLOG"
 
+echo "==> R74: Compiling (an unprivileged compartment can arm the retain mask)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r74.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r74_umode_retain_mask.sv"
+echo "==> Simulating (R74 U-mode retain mask)"
+vvp "$SIM/sim_r74.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r74_umode_retain_mask.hex" | tee -a "$RUNLOG"
+
+echo "==> R73: Compiling (a domain refusal is mode-dependent)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r73.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r73_bind_mode_refusal.sv"
+echo "==> Simulating (R73 bind-mode refusal)"
+vvp "$SIM/sim_r73.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r73_bind_mode_refusal.hex" | tee -a "$RUNLOG"
+
 echo "==> R50i2: Compiling (the crossing clears the capability register file)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_r50i2.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r50i2_crossing_clear.sv"
 echo "==> Simulating (R50i2 crossing capability clear)"

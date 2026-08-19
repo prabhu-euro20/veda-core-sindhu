@@ -75,7 +75,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4
 
     # If OCInvoke somehow fell through instead of jumping or trapping,
@@ -147,7 +147,7 @@ landing_pad:
     .insn r 0x5b, 0x1, 0x10, x8, x6, x2  # cseal c8, c6, c2  -- sealed return DATA
 
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x7, x8  # ocinvoke c7, c8   -- widens PCC back to unbounded
 
 return_pad:

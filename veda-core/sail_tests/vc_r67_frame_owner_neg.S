@@ -95,7 +95,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4     # ocinvoke -> C
     j    fail
 .balign 4
@@ -107,7 +107,7 @@ compC:
 compD:
     csrr x21, 0x7C8                         # depth inside D -- still 1?
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x13, x0    # ocreturn c13 -- D never trapped
     j    fail
 .balign 4
@@ -122,7 +122,7 @@ trap_handler:
     csrr x24, 0x7C3                         # C's saved length
     # the handler narrows ITSELF by OCInvoke -- the case R12's own comment names
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x10, x11   # ocinvoke -> D
     j    fail
 check:

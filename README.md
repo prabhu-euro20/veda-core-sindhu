@@ -157,7 +157,7 @@ https://github.com/user-attachments/assets/a454737e-e342-45c1-81d3-4bb3c8d80044
 **(as of 2026-08-18, after the R36..R43 hardening pass -- see
 `veda-core/EVIDENCE_INDEX.md`'s dated addendum for every finding traced to its test, and
 `../veda-core-linux/design/DESIGN_07_ROBUSTNESS_AND_SECURITY_HARDENING.md` for the findings
-register, which runs R1..R71 with no gaps.)**
+register, which runs R1..R74 with no gaps.)**
 
 **One command reproduces all four suites:**
 

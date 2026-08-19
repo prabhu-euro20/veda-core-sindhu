@@ -45,7 +45,7 @@ _start:
     // measures a different mechanism, so it declares RETAIN ALL. The burden
     // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     # The label must pin the TRAPPING instruction: the handler compares mepc
     # against it exactly. The retain mask is set above the label for that reason.
 neg1_fault:
@@ -59,7 +59,7 @@ neg1_fault:
     .insn r 0x5b, 0x1, 0x10, x6, x5, x2  # cseal c6, c5, c2   -- c6.otype = 1 (MATCHES c3)
 
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     # The label must pin the TRAPPING instruction: the handler compares mepc
     # against it exactly. The retain mask is set above the label for that reason.
 neg2_fault:

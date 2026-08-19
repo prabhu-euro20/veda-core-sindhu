@@ -1376,7 +1376,7 @@
          // unlike its three read-only neighbours -- software must be able to
          // declare what it is passing. Never written means zero means retain
          // NOTHING, so silence means clear and never leak.
-         $csr_is_veda_xretain        = ($csr_addr == 12'h7CA);
+         $csr_is_veda_xretain        = ($csr_addr == 12'h8CA);
 
          // MRET: the one, fixed 32-bit encoding (funct12=0b001100000010,
          // rs1=rd=0, funct3=0, opcode=SYSTEM) -- matched as a single
@@ -2349,7 +2349,10 @@
          // of someone else's descriptor. Bind-NoTrap exists to be a SILENT
          // probe, which is exactly what makes leaking through it worse than
          // through a trapping instruction -- there is no fault to notice.
-         $veda_bind_ok = $veda_odt_valid && $veda_owner_ok;
+         // R73: $veda_bind_domain_ok joins it, so a Bind-NoTrap refused by the
+         // domain gate takes the SAME soft-fail path an owner-refused one has
+         // always taken -- register zeroed, Tag cleared -- instead of trapping.
+         $veda_bind_ok = $veda_odt_valid && $veda_owner_ok && $veda_bind_domain_ok;
          // ═══ RTL-17: PER-OBJECT BIND AUTHORITY ═══
          //
          // The object itself says who may bind it. Three ways to pass: it is
@@ -2417,7 +2420,16 @@
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
                                  ($veda_pcc_object == VEDA_OBJECT_NONE) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
-         $veda_domain_violation = ($is_veda_bind_plain || $is_veda_bind_notrap || $is_veda_rebind)
+         // R73: PLAIN BIND ONLY, and that now matches $veda_bind_owner_violation
+         // two hundred lines up, which has always read $is_veda_bind_plain &&
+         // $veda_odt_valid && !$veda_owner_ok. A domain refusal is mode-dependent
+         // like every other refusal here: the loud form traps, the two quiet forms
+         // soft-fail through $veda_bind_ok and $veda_rebind_ok below. The
+         // all-modes form this replaces was inherited from the region and
+         // residency gates beside it WITHOUT their argument -- those trap for
+         // every mode so the holder goes and SERVICES something ("paged out,
+         // retry"), and there is nothing to service on a domain refusal.
+         $veda_domain_violation = $is_veda_bind_plain
                                    && $veda_odt_valid && !$veda_bind_domain_ok;
          $veda_bind_notfound_violation = $is_veda_bind_plain && !$veda_odt_valid;
          $veda_bind_trap = $veda_bind_owner_violation || $veda_bind_notfound_violation;
@@ -2514,7 +2526,11 @@
          $veda_rdcap_tag          = /vreg[$veda_rd_cap]$tag;
          $veda_rdcap_objid[43:0]  = /vreg[$veda_rd_cap]$object_id;
          $veda_rebind_identity_ok = $veda_rdcap_tag && ($veda_rdcap_objid == $veda_object_id);
-         $veda_rebind_ok         = $veda_rebind_identity_ok && !$veda_rebind_sealed && $veda_odt_valid && $veda_owner_ok;
+         // R73: and the same term here, giving Rebind its OWN soft-fail shape --
+         // Tag cleared, every other field including Base and Offset preserved.
+         // The two shapes are different and a test that checked only the tag
+         // could not tell them apart, so the Sail twin asserts Base on both.
+         $veda_rebind_ok         = $veda_rebind_identity_ok && !$veda_rebind_sealed && $veda_odt_valid && $veda_owner_ok && $veda_bind_domain_ok;
          // Milestone 12: real claim/re-claim write-back, shared by both
          // Bind's and Rebind's own success paths below -- mirrors
          // veda_bind_insts.sail's own `claimed_entry`, written on every
@@ -2525,8 +2541,19 @@
          // path ($veda_bind_owner_violation, defined further below) --
          // mutually exclusive by construction, since that path requires
          // !$veda_owner_ok while this one requires $veda_owner_ok.
+         // R73 -- AND THIS TERM IS THE FIX'S OWN HAZARD, CLOSED IN THE SAME EDIT.
+         // $veda_owner_claim_en below carries !$veda_domain_violation, added by
+         // R59 for exactly this reason. R73 narrows $veda_domain_violation to
+         // plain Bind, so that guard STOPS COVERING Bind-NoTrap -- and this
+         // predicate never consulted the domain gate itself. Without the term
+         // added here, a NoTrap that soft-fails on a domain refusal would
+         // silently write MHARTID into the owner byte of an object it was just
+         // refused: R59's bug, reopened by R59's own successor. Found by
+         // reading the consumer before landing, not by a suite that would not
+         // have noticed -- the owner byte is invisible to every assertion in
+         // the corpus and MHARTID is 0 on this core.
          $veda_bind_claim_en     = ($is_veda_bind_plain || $is_veda_bind_notrap) &&
-                                    $veda_odt_valid && $veda_owner_ok;
+                                    $veda_odt_valid && $veda_owner_ok && $veda_bind_domain_ok;
          $veda_rebind_claim_en   = $is_veda_rebind && $veda_rebind_ok;
          // RTL-4: gate the claim on the region fault too. This one is NOT
          // defensive -- it is reachable. The gate fires on residency, before

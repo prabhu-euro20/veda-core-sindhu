@@ -86,7 +86,7 @@ _start:
     // measures a different mechanism, so it declares RETAIN ALL. The burden
     // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4  -- narrows PCC to [landing_pad, landing_pad+4)
 
 landing_pad:

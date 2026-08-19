@@ -9,7 +9,7 @@
 # register the caller left bound. R48 closed the mint channel; this closes the
 # possession one.
 #
-# THE ABI: CSR 0x7CA veda_xretain. Bit i set means capability register i SURVIVES
+# THE ABI: CSR 0x8CA veda_xretain. Bit i set means capability register i SURVIVES
 # the next crossing. Never written means zero means retain NOTHING, so silence
 # means clear and never leak. SELF-CONSUMING, so a mask cannot survive to apply
 # to a later crossing.
@@ -82,13 +82,13 @@ setup:
     beq  x16, x19, round2
     # ROUND 1: retain ONLY the sentry. c10 must NOT survive.
     li   x31, 0x2000                        # bit 13
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4
     j    fail
 round2:
     # ROUND 2: retain the sentry AND c10. The read must now SUCCEED.
     li   x31, 0x2400                        # bits 13 and 10
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4
     j    fail
 .balign 4
@@ -103,7 +103,7 @@ compartment:
     mv   x22, x18
     li   x16, 1
     li   x31, 0                             # nothing survives the return
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x13, x0
     j    fail
 r2check:
@@ -111,7 +111,7 @@ r2check:
     mv   x24, x18
     li   x16, 2
     li   x31, 0
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x13, x0
     j    fail
 .balign 4

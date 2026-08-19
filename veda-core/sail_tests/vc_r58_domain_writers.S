@@ -104,7 +104,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x8, x9     # -> compartment A, region 1
 
 .balign 4
@@ -121,17 +121,25 @@ compA:
     .insn r 0x0b, 0x1, 0x03, x5, a1, x0     # veda.odt.destroy
     mv   s3, s0                             # traps inside A: must be 0
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x12, x13   # -> compartment B, region 0
 
 .balign 4
 compB:
     # ═══ (1) POPULATE-FAST must have taken A's domain ═════════════════════
+    # R73 -- PLAIN Bind, not .notrap, and this file already wrote the reason
+    # twenty lines below for row (2): "Under .notrap a not-found object
+    # SOFT-FAILS with no trap, so the cause -- the only thing that says which
+    # way owner_domain went -- never exists." The same is now true of a DOMAIN
+    # refusal, because R73 made the refusal mode-dependent. Row (1)'s
+    # load-bearing assertion is the CAUSE in s7, not the tag in s4, and a cause
+    # requires the loud form. This is the one-word change that keeps every
+    # assertion below exactly as it was.
     li   a1, 16777286
-    .insn i 0x0b, 0x5, x0, a1, 1            # veda.bind.notrap c0
-    .insn r 0x5b, 0x0, 0x03, s4, x0, x0     # tag MUST be 0
+    .insn i 0x0b, 0x5, x0, a1, 0            # veda.bind c0 -- PLAIN, must trap
+    .insn r 0x5b, 0x0, 0x03, s4, x0, x0     # tag MUST be 0 (rd untouched on a trap)
     mv   s5, s0                             # one trap so far
-    mv   s7, s1                             # its mtval
+    mv   s7, s1                             # its mtval -- THE discriminator
 
     # ═══ (2) DESTROY must have reset the domain to ANY ════════════════════
     # A destroyed slot's cause discriminates: OBJECT_NOT_FOUND (0x05) if the

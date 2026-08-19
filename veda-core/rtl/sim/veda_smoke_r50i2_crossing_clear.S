@@ -10,7 +10,7 @@ _start:
     // it simply uses a register the caller left bound. R48 closed the MINT
     // channel; this closes the POSSESSION one.
     //
-    // THE ABI: CSR 0x7CA veda_xretain. Bit i set means capability register i
+    // THE ABI: CSR 0x8CA veda_xretain. Bit i set means capability register i
     // SURVIVES the next crossing. Never written means zero means retain
     // NOTHING, so silence means clear and never leak. The mask is
     // SELF-CONSUMING, so it cannot survive to apply to a later crossing --
@@ -108,7 +108,7 @@ setup:
 
     // ═══ ROUND 1 -- retain ONLY the sentry. c10 must NOT survive. ═════════
     li   x31, 0x2000                       // bit 13
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4    // ocinvoke c3, c4
     j    done
 
@@ -119,7 +119,7 @@ round2:
     // that cleared unconditionally, ignoring the mask entirely, would pass
     // round 1 for entirely the wrong reason.
     li   x31, 0x2400                       // bits 13 and 10
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4    // ocinvoke c3, c4
     j    done
 
@@ -138,7 +138,7 @@ compartment:
     mv   x22, x18                          // round 1: what was read
     li   x16, 1
     li   x31, 0                            // nothing survives the return
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x13, x0   // ocreturn c13
     j    done
 
@@ -148,7 +148,7 @@ r2check:
     mv   x24, x18                          // round 2: what was read
     li   x16, 2
     li   x31, 0
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x13, x0   // ocreturn c13
     j    done
 

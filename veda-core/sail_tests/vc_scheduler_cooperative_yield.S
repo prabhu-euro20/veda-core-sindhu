@@ -255,7 +255,7 @@ _start:
     # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
     # carries tight masks and the control that discriminates.
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x0, x1   # ocinvoke c0, c1
     j    fail_halt                          # must NOT be reached
 
@@ -401,7 +401,7 @@ scheduler_entry:
     xori x24, x24, 1
     .insn r 0x0b, 0x3, 0x01, x24, x8, x23  # ocs.d c8, x23(=0), x24  -- store toggled thread_index
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x10, x0  # ocreturn c10
     j    fail_halt                          # must NOT be reached
 
@@ -559,7 +559,7 @@ invoke_scheduler:
     #     sentry.
     .insn r 0x5b, 0x1, 0x15, x10, x9, x0  # csealentry c10, c9  -- mint fresh return sentry
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x4, x5   # ocinvoke c4, c5     -- invoke SCHEDULER
     j    fail_halt                          # must NOT be reached (scheduler must OCRETURN)
 
@@ -660,7 +660,7 @@ resume_a_tsc_ok:
                                                     # offset read before dest write, confirmed
                                                     # against VEDA_OCL's real execute clause
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x11, x0    # ocreturn c11        -- atomically narrow + jump
     j    fail_halt                            # must NOT be reached
 resume_b:
@@ -715,7 +715,7 @@ resume_b_tsc_ok:
     li x5,264 ; .insn r 0x0b,0x3,0x00,x31,x7,x5   # ocl.d c7,264(x5),x31
     li x5,56  ; .insn r 0x0b,0x3,0x00,x5, x7,x5   # ocl.d c7,56(x5),x5
     li   x31, 0xFFFF
-    csrw 0x7CA, x31
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x11, x0    # ocreturn c11
     j    fail_halt                            # must NOT be reached
 

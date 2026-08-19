@@ -7,7 +7,7 @@
 // uses a register the caller left bound. R48 closed the mint channel; this
 // closes the possession one.
 //
-// The ABI is CSR 0x7CA veda_xretain: bit i set means capability register i
+// The ABI is CSR 0x8CA veda_xretain: bit i set means capability register i
 // survives the next crossing. Never written means zero means retain nothing,
 // so silence means clear and never leak. The mask is self-consuming.
 //
