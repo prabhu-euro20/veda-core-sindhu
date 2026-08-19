@@ -704,6 +704,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r68.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R68 populate stale base)"
 vvp "$SIM/sim_r68.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r68_populate_stale.hex" | tee -a "$RUNLOG"
 
+echo "==> R69: Compiling (page-in is Machine-only)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r69.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r69_pagein_machine_only.sv"
+echo "==> Simulating (R69 page-in Machine-only)"
+vvp "$SIM/sim_r69.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r69_pagein_machine_only.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

@@ -2924,18 +2924,18 @@
          //  every outstanding capability kept validating and nothing
          //  signalled the move. Doing the same through Populate bumps
          //  generation and makes the relocation loud.
+         // R69: page-in is MACHINE-ONLY. The gate below already refuses
+         // `!valid || resident`, so every delegated execution was a non-resident
+         // one -- there was no delegated case left to authorize. Both ODA window
+         // terms are DELETED rather than left standing: Machine is exempt from
+         // them and no delegated caller reaches here, so they would read as tests
+         // that cannot fail. Measured: zero corpus damage, because a delegated
+         // pager could never learn which object faulted -- CSR 0x7C9 is
+         // Machine-only by its address, csrPriv(csr) = csr[9:8] and 0x7C9 gives
+         // 0b11, and mtval carries only {cap_idx, cause}.
          $veda_odt_page_in_refusal  = $is_veda_odt_page_in &&
-                                       (!($priv || $veda_oda_authorized) ||
+                                       (!$priv ||
                                         !$veda_odt_valid ||
-                                        // R47: BOTH windows, and for a reason page-out does
-                                        // not have -- this instruction CHOOSES WHERE THE
-                                        // OBJECT LANDS, so without the new half a delegated
-                                        // actor could page a foreign object into its own
-                                        // window and own it outright. The old Base survives
-                                        // page-out (preserved, stale but present), so the old
-                                        // half is a real test rather than a read of zeros.
-                                        $veda_oda_denies_old ||
-                                        $veda_oda_denies_pin ||
                                         $veda_odt_resident);
          //  Page-out's generation bump. SATURATING, not a raw +1, and the
          //  refusal above already makes the saturation unreachable -- so
