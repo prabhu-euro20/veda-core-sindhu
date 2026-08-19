@@ -94,6 +94,12 @@ _start:
     #    register the switcher's own real job is to clear. --
     li   x20, 0xBAD5EC12
 
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4  -- narrows PCC to [switcher_entry, switcher_entry+0x100), enters the switcher
 
     li   x22, 0xDEAD                     # must NOT be reached -- would mean OCInvoke fell through
@@ -106,6 +112,8 @@ switcher_entry:
     #    compartment (c5/c6, prepared in _start and untouched by the
     #    first OCInvoke). --
     li   x20, 0
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x5, x6  # ocinvoke c5, c6  -- narrows PCC to [target_entry, target_entry+0x100), enters the target
 
     li   x22, 0xBEEF                     # must NOT be reached -- would mean the second OCInvoke fell through
@@ -169,6 +177,8 @@ target_entry:
     .insn r 0x5b, 0x1, 0x10, x3, x0, x2  # cseal c3, c0, c2  -- sealed RETURN CODE
     .insn r 0x5b, 0x1, 0x10, x4, x1, x2  # cseal c4, c1, c2  -- sealed RETURN DATA
 
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4  -- widens PCC back to unbounded, lands at return_pad
 
     li   x22, 0xFEED                     # must NOT be reached -- would mean the return OCInvoke fell through

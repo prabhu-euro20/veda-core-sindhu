@@ -41,6 +41,13 @@ _start:
     .insn r 0x5b, 0x1, 0x0a, x2, x2, x9  # oca c2, c2, x9      -- c2.Offset: 0 -> 1
     .insn r 0x5b, 0x1, 0x10, x4, x1, x2  # cseal c4, c1, c2   -- c4.otype = 1 (MISMATCHED with c3)
 
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
+    # The label must pin the TRAPPING instruction: the handler compares mepc
+    # against it exactly. The retain mask is set above the label for that reason.
 neg1_fault:
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4   -- must genuinely TRAP (Type Violation)
     # Falls through here on the handler's own MRET (mepc+4) --
@@ -51,6 +58,10 @@ neg1_fault:
     .insn r 0x5b, 0x1, 0x10, x3, x0, x2  # cseal c3, c0, c2   -- c3.otype = 1 (c2.Offset still 1)
     .insn r 0x5b, 0x1, 0x10, x6, x5, x2  # cseal c6, c5, c2   -- c6.otype = 1 (MATCHES c3)
 
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
+    # The label must pin the TRAPPING instruction: the handler compares mepc
+    # against it exactly. The retain mask is set above the label for that reason.
 neg2_fault:
     .insn r 0x5b, 0x1, 0x12, x0, x3, x6  # ocinvoke c3, c6   -- must genuinely TRAP (Permit_Execute Violation, on c6)
     # Falls through here on the handler's own second MRET -- the real

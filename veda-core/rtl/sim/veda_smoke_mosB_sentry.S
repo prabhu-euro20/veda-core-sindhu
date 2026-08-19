@@ -58,12 +58,19 @@ _start:
     .insn r 0x5b, 0x1, 0x10, x6, x0, x4  # cseal c6, c0, c4
     .insn r 0x5b, 0x1, 0x10, x7, x3, x4  # cseal c7, c3, c4
 
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x6, x7  # ocinvoke c6, c7  -- narrows PCC to [comp_entry, comp_entry+0x40)
 poison1:
     j poison1                             # must NOT be reached
 
 comp_entry:
     li   x20, 0x1111
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x9, x0  # ocreturn c9  -- widen PCC to sentry's own bounds, jump there
 poison2:
     j poison2                             # must NOT be reached -- would mean OCRETURN fell through

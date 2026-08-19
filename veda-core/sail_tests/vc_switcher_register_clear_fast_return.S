@@ -119,16 +119,26 @@ _start:
 
     li   x20, 0xBAD5EC12                  # poisoned non-argument register
 
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4  -- enters the switcher
     j    fail                             # must NOT be reached
 
 switcher_entry:
     li   x20, 0
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x5, x6  # ocinvoke c5, c6  -- enters the target
     j    fail                             # must NOT be reached
 
 target_entry:
     li   x22, 0x600D
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x9, x0  # ocreturn c9  -- cheap return into switcher_fast_return
     j    fail                             # must NOT be reached
 
@@ -139,6 +149,8 @@ switcher_fast_return:
     #    proves the target's cheap OCRETURN genuinely restored the
     #    switcher's own execution context, not merely jumped somewhere. --
     li   x23, 0xF00D
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x11, x0  # ocreturn c11  -- cheap exit to fully unbounded PCC
     j    fail                             # must NOT be reached
 

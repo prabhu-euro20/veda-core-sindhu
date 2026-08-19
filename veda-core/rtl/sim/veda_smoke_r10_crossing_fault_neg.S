@@ -64,6 +64,11 @@ _start:
     csrr x23, 0x7C7                        // veda_saved_region -- expect 0xFFFFF
 
     // ---- Phase A: OCInvoke into the paged-out domain.
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x12, x13 // ocinvoke c12, c13 -- must REGION_FAULT
     j    done                              // wrongly-succeeded invoke never reaches after_a
 .balign 4
@@ -72,6 +77,8 @@ after_a:
     mv   x9,  x19                          // mtval  from A -- expect 0x189
 
     // ---- Phase B: OCReturn through the region-2 sentry.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x14, x0  // ocreturn c14 -- must REGION_FAULT
     j    done                              // wrongly-succeeded return never reaches after_b
 .balign 4

@@ -69,6 +69,12 @@ _start:
     .insn i 0x0b, 0x5, x5, x1, 0
     .insn r 0x5b, 0x1, 0x15, x8, x5, x0     # csealentry c8, c5 -- the return SENTRY
 
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4     # ocinvoke -> region 1
     j    fail
 .balign 4
@@ -119,6 +125,8 @@ trap_handler:
     csrr x21, 0x7C7
     li   t4, 1
     bne  x21, t4, fail                      # CONTROL: the shadow did capture
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x8, x0     # ocreturn c8 -- the architecture's
                                             # SECOND exit from a handler, and
                                             # the only one the shipped switcher

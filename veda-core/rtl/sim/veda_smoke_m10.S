@@ -51,6 +51,11 @@ _start:
     # -- The real invoke: atomically unseals c3/c4 and jumps to c3's
     #    own resolved target address (landing_pad), installing unsealed
     #    c4 into c15 (IDC). --
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4
 
     # If OCInvoke somehow fell through instead of jumping, execution

@@ -61,6 +61,11 @@ _start:
 
     li   x20, 0                            # trap counter
     li   x21, 0                            # stage marker
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4    # ocinvoke c3, c4 -- enter bounded
     j    fail
 

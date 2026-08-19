@@ -186,6 +186,12 @@ _start:
     .insn r 0x5b, 0x1, 0x13, x14, x6, x1  # ospecialrw c14(discard), tsc, c6
 
     # ══════════════ enter THREAD_A for the first time ══════════════
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x0, x1   # ocinvoke c0, c1
     j    fail_halt                          # must NOT be reached
 
@@ -276,6 +282,8 @@ scheduler_entry:
     .insn r 0x0b, 0x3, 0x00, x24, x8, x23  # ocl.d c8, x23(=0), x24  -- load thread_index
     xori x24, x24, 1
     .insn r 0x0b, 0x3, 0x01, x24, x8, x23  # ocs.d c8, x23(=0), x24  -- store toggled thread_index
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x10, x0  # ocreturn c10
     j    fail_halt                          # must NOT be reached
 
@@ -318,6 +326,8 @@ invoke_scheduler:
     beq  x6, x27, final_check
 
     .insn r 0x5b, 0x1, 0x15, x10, x9, x0  # csealentry c10, c9  -- mint fresh return sentry
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x4, x5   # ocinvoke c4, c5     -- invoke SCHEDULER
     j    fail_halt                          # must NOT be reached (scheduler must OCRETURN)
 
@@ -360,6 +370,8 @@ do_resume:
     sub  x31, x28, x29
     .insn r 0x5b, 0x1, 0x0a, x11, x11, x31  # oca c11, c11, x31
     .insn r 0x5b, 0x1, 0x15, x11, x11, x0   # csealentry c11, c11
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x11, x0    # ocreturn c11
     j    fail_halt
 

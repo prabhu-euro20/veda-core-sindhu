@@ -52,7 +52,12 @@ _start:
     # compartment's LAST instruction, here the ocinvoke into B.)
     la   t0, compA
     slli t0, t0, 32
-    li   t1, 0x00400402
+    # R50 increment 2 widened this from 0x40 to 0x80, and the reason is a real
+    # cost of that design rather than a scaffold detail: the retain mask is
+    # SELF-CONSUMING, so a compartment that wants to pass capabilities onward
+    # must set the CSR ITSELF, inside its own PCC window. Two instructions of
+    # compartment code per outbound crossing.
+    li   t1, 0x00800402
     or   a2, t0, t1
     li   a1, 16777276                       # region-1 CODE {r=1,l=60}
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2
@@ -94,6 +99,12 @@ _start:
     ori  t0, t0, 0x000C
     csrw 0x7c4, t0
 
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x8, x9     # -> compartment A, region 1
 
 .balign 4
@@ -109,6 +120,8 @@ compA:
     li   a1, 16777287
     .insn r 0x0b, 0x1, 0x03, x5, a1, x0     # veda.odt.destroy
     mv   s3, s0                             # traps inside A: must be 0
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x12, x13   # -> compartment B, region 0
 
 .balign 4

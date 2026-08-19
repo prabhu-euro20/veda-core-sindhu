@@ -1371,6 +1371,12 @@
          // is designed. Read-only, like its three neighbours, and for the same
          // reason: a writable fault-report register is a forgeable one.
          $csr_is_veda_mfaultobj      = ($csr_addr == 12'h7C9);
+         // R50 increment 2: the crossing's RETAIN mask. Bit i set means
+         // capability register i survives the next crossing. READ-WRITE,
+         // unlike its three read-only neighbours -- software must be able to
+         // declare what it is passing. Never written means zero means retain
+         // NOTHING, so silence means clear and never leak.
+         $csr_is_veda_xretain        = ($csr_addr == 12'h7CA);
 
          // MRET: the one, fixed 32-bit encoding (funct12=0b001100000010,
          // rs1=rd=0, funct3=0, opcode=SYSTEM) -- matched as a single
@@ -3158,6 +3164,16 @@
             // predicate exactly like OCInvoke's fixed-index one above. Read
             // through |cpu>>1 for the same reason every other arm here does.
             $oclear_wr_en = |cpu>>1$is_veda_oclear && |cpu>>1$veda_oclear_mask[#vreg];
+            // R50 increment 2: a successful crossing clears every capability
+            // register the retain mask does not name. c15 is excluded on the
+            // OCINVOKE leg only, because the IDC install writes it in the same
+            // cycle -- Sail expresses that by clearing BEFORE the install.
+            // OCRETURN does NOT exclude c15: it installs no IDC, so a surviving
+            // one hands the callee's own data capability back to the caller.
+            $xclear_wr_en = ((|cpu>>1$is_veda_ocinvoke && !|cpu>>1$veda_ocinvoke_violation && (#vreg != 4'd15)) ||
+                             (|cpu>>1$is_veda_ocreturn && !|cpu>>1$veda_ocreturn_violation))
+                            && !|cpu>>1$veda_xretain[#vreg];
+            $cap_clear_wr_en = $oclear_wr_en || $xclear_wr_en;
             // RTL Milestone 11: OSpecialRW's own `cd` write -- an
             // ordinary $veda_rd_cap-indexed target (real operand, unlike
             // OCInvoke's fixed index above), receiving the ODA's OWN
@@ -3254,7 +3270,7 @@
                                        // enough: the query family is deliberately un-gated, so an untagged
                                        // register still answers cgetbase with the raw physical Base --
                                        // the disclosure RTL-14 already paid for once.
-                                       $oclear_wr_en     ? 1'b0 :
+                                       $cap_clear_wr_en  ? 1'b0 :
                                        $RETAIN;
             // RTL-6b seed -- c11 names Object_ID 104, the reset-seeded
             // {valid, NOT resident} object, with every OTHER field built to
@@ -3327,7 +3343,7 @@
                                $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_object_id :
                                $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_object_id : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_object_id : |cpu>>1$veda_oda_object_id) :
                                $csealentry_wr_en ? |cpu>>1$veda_rs1cap_object_id :
-                                                                    $oclear_wr_en     ? 44'b0 :
+                                                                    $cap_clear_wr_en  ? 44'b0 :
                                                                     $RETAIN;
             $base[55:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 56'h8001_0300 : 56'b0) :
                           $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_base : 56'b0) :
@@ -3340,7 +3356,7 @@
                           $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_base :
                           $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_base : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_base : |cpu>>1$veda_oda_base) :
                           $csealentry_wr_en ? |cpu>>1$veda_rs1cap_base :
-                                              $oclear_wr_en     ? 56'b0 :
+                                              $cap_clear_wr_en  ? 56'b0 :
                                               $RETAIN;
             $length[39:0] = (|cpu$reset || |cpu>>1$reset) ? ((veda_fixtures_mode && (#vreg == 11)) ? 40'h40 : 40'b0) :
                             $bind_wr_en       ? (|cpu>>1$veda_bind_ok ? |cpu>>1$veda_odt_length : 40'b0) :
@@ -3353,7 +3369,7 @@
                             $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_length :
                             $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_length : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_length : |cpu>>1$veda_oda_length) :
                             $csealentry_wr_en ? |cpu>>1$veda_rs1cap_length :
-                                                $oclear_wr_en     ? 40'b0 :
+                                                $cap_clear_wr_en  ? 40'b0 :
                                                 $RETAIN;
             // A fresh Bind always starts at the object's own beginning
             // (VEDA_CORE_SPEC.md Section 4) -- Offset isn't sourced from
@@ -3387,7 +3403,7 @@
                             $ocinvoke_wr_en   ? |cpu>>1$veda_cs2_offset :
                             $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_offset : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_offset : |cpu>>1$veda_oda_offset) :
                             $csealentry_wr_en ? |cpu>>1$veda_rs1cap_offset :
-                                                $oclear_wr_en     ? 40'b0 :
+                                                $cap_clear_wr_en  ? 40'b0 :
                                                 $RETAIN;
             // RTL-5 (R10) seed: c12 CODE Execute|Invoke (0x0402), c13 DATA
             // Invoke-only (0x0400, deliberately NON-executable so it passes
@@ -3439,7 +3455,7 @@
                            $ocinvoke_wr_en ? |cpu>>1$veda_cs2_perms :
                            $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_perms : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_perms : |cpu>>1$veda_oda_perms) :
                            $csealentry_wr_en ? |cpu>>1$veda_rs1cap_perms :
-                                                                $oclear_wr_en     ? 16'b0 :
+                                                                $cap_clear_wr_en  ? 16'b0 :
                                                                 $RETAIN;
             // A fresh Bind always carries the UNSEALED sentinel (Section
             // 1: "otype always set to 0xFFFF... sealing only ever happens
@@ -3499,7 +3515,7 @@
                                                                 // register permanently un-Rebindable while its tag read 0 and
                                                                 // every tag assertion stayed green. That is R24 re-created. Sail's
                                                                 // zero_capability carries UNSEALED_OTYPE for this reason.
-                                                                $oclear_wr_en     ? 16'hFFFF :
+                                                                $cap_clear_wr_en  ? 16'hFFFF :
                                                                 $RETAIN;
             // Cached generation, for the staleness re-check below. OCL.C
             // restores the generation a real OCS.C actually stored --
@@ -3540,7 +3556,7 @@
                              $ocinvoke_wr_en ? |cpu>>1$veda_cs2_reserved :
                              $ospecialrw_wr_en ? (|cpu>>1$veda_ospecialrw_scr_is_tsc ? |cpu>>1$veda_tsc_reserved : |cpu>>1$veda_ospecialrw_scr_is_ssc ? |cpu>>1$veda_ssc_reserved : |cpu>>1$veda_oda_reserved) :
                              $csealentry_wr_en ? |cpu>>1$veda_rs1cap_reserved :
-                                                                  $oclear_wr_en     ? 24'b0 :
+                                                                  $cap_clear_wr_en  ? 24'b0 :
                                                                   $RETAIN;
 
             // RTL-2b: flags[19:0] -- the new opaque/reserved field of the
@@ -3554,7 +3570,7 @@
                             $oca_wr_en || $csetbounds_wr_en || $cseal_wr_en || $cunseal_wr_en ||
                             $candperm_wr_en || $ocinvoke_wr_en || $ospecialrw_wr_en ||
                             $csealentry_wr_en) ? 20'b0 :
-                                                                  $oclear_wr_en     ? 20'b0 :
+                                                                  $cap_clear_wr_en  ? 20'b0 :
                                                                   $RETAIN;
 
          // ─────────────────────────────────────────────────────────
@@ -5277,7 +5293,7 @@
                            $csr_is_veda_mepcc_base || $csr_is_veda_mepcc_length ||
                            $csr_is_veda_attr || $csr_is_veda_mode || $csr_is_veda_current_region ||
                            $csr_is_veda_saved_region || $csr_is_veda_trap_status ||
-                           $csr_is_veda_mfaultobj;
+                           $csr_is_veda_mfaultobj || $csr_is_veda_xretain;
          $csr_is_readonly = $csr_is_veda_current_region || $csr_is_veda_saved_region ||
                             $csr_is_veda_trap_status || $csr_is_veda_mfaultobj;
          $veda_csr_undef = $is_csr_access && (!$csr_addr_known || ($csr_write_en && $csr_is_readonly));
@@ -5446,6 +5462,7 @@
                              $csr_is_veda_saved_region   ? {44'b0, $veda_saved_region} :
                              $csr_is_veda_trap_status    ? {55'b0, $veda_trap_poison, $veda_trap_depth} :
                              $csr_is_veda_mfaultobj      ? {20'b0, $veda_mfaultobj} :
+                             $csr_is_veda_xretain        ? {48'b0, $veda_xretain} :
                                               64'b0;
          // CSRRS with rs1=x0 must not write the CSR at all (real
          // RISC-V's own rule, VEDA_CORE... no -- the base Zicsr spec
@@ -5885,6 +5902,18 @@
          //  faulted" and "object 0 faulted" the same reading. That is R10's
          //  argument for the CRBR's out-of-window sentinel, and the Sail half
          //  got it wrong on its first attempt and its own test caught it.
+         //  R50 increment 2: the retain mask. SELF-CONSUMING -- a crossing
+         //  takes it and zeroes it, so a mask cannot survive to apply silently
+         //  to a later crossing, the shape R60 had to fix for the CRBR shadow.
+         //  Cleared on trap entry too: a handler's own crossing must not
+         //  inherit whatever the interrupted code had staged.
+         $veda_crossing_taken = (>>1$is_veda_ocinvoke && !(>>1$veda_ocinvoke_violation)) ||
+                                (>>1$is_veda_ocreturn && !(>>1$veda_ocreturn_violation));
+         $veda_xretain[15:0] = $reset ? 16'b0 :
+                                (>>1$veda_trap_taken) ? 16'b0 :
+                                ($veda_crossing_taken) ? 16'b0 :
+                                (>>1$csr_write_en && >>1$csr_is_veda_xretain) ? >>1$csr_wdata[15:0] :
+                                                                                 >>1$veda_xretain;
          $veda_bind_family_trap = >>1$is_veda_bind_plain || >>1$is_veda_bind_notrap || >>1$is_veda_rebind;
          $veda_mfaultobj[43:0] = $reset ? 44'hFFFFFFFFFFF :
                                   (>>1$veda_trap_taken && $veda_bind_family_trap) ? >>1$veda_object_id :

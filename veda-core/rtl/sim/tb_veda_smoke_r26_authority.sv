@@ -49,6 +49,10 @@
 // Delete R26's single pcc_object comparator from $veda_csr_escape_violation and
 // re-run: traps 0, mepcc_length 0x40 -- the compartment rewrote its own
 // execution bounds -- and mtvec 0x800000FC, the hijacked vector. The escape is
+// (R50 increment 2 shifted trap_handler by 12 bytes: the retain-mask write is
+//  two instructions ahead of the crossing. The hard-coded address is updated
+//  rather than the test relaxed -- it is pinning a REAL address, and that is
+//  the point of the assertion.)
 // real, this test fails on the unfixed design, and it fails in exactly the way
 // the finding predicted rather than merely somewhere.
 module tb;
@@ -70,7 +74,7 @@ module tb;
     $display("        restored    x21=0x%0h (want 0xFFFFFFFFFF)", dut.CPU_Xreg_val_a0[21]);
     $display("INSIDE  mepcc write x11=0x%0h (want 0xFFFFFFFFFF -- REFUSED, the write never landed)",
              dut.CPU_Xreg_val_a0[11]);
-    $display("INSIDE  mtvec write x12=0x%0h (want 0x80000108 trap_handler, NOT 0x800000FC hijacked)",
+    $display("INSIDE  mtvec write x12=0x%0h (want 0x80000114 trap_handler, NOT 0x800000FC hijacked)",
              dut.CPU_Xreg_val_a0[12]);
     $display("        hijacked    x14=0x%0h (want 0 -- never executed)   reached end x15=0x%0h (want 0x600D)",
              dut.CPU_Xreg_val_a0[14], dut.CPU_Xreg_val_a0[15]);
@@ -83,7 +87,7 @@ module tb;
         dut.CPU_Xreg_val_a0[10] == 64'h40               &&
         dut.CPU_Xreg_val_a0[21] == 64'hFFFFFFFFFF       &&
         dut.CPU_Xreg_val_a0[11] == 64'hFFFFFFFFFF       &&
-        dut.CPU_Xreg_val_a0[12] == 64'h80000108         &&
+        dut.CPU_Xreg_val_a0[12] == 64'h80000114         &&
         dut.CPU_Xreg_val_a0[14] == 64'h0                &&
         dut.CPU_Xreg_val_a0[15] == 64'h600D             &&
         dut.CPU_Xreg_val_a0[23] == 64'h2                &&

@@ -80,6 +80,11 @@ _start:
     .insn r 0x5b, 0x1, 0x10, x4, x1, x2   // cseal c4, c1, c2  -- sealed region-1 DATA
 
     // (1) enter region 1 -- the CRBR must load region 1.
+    // R50 increment 2: this file predates the crossing's retain mask and
+    // measures a different mechanism, so it declares RETAIN ALL. The burden
+    // of proving the clear works sits on veda_smoke_r50i2_crossing_clear.S.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4   // ocinvoke c3, c4
     j    fail                              // must jump, not fall through
 .balign 4
@@ -100,6 +105,8 @@ resume_r1:
     bne  x13, t2, fail
 
     // (4) return through the region-0 sentry -- CRBR back to region 0.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x9, x0   // ocreturn c9
     j    fail
 .balign 4

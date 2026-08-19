@@ -60,6 +60,12 @@ _start:
     .insn r 0x5b, 0x1, 0x10, x3, x0, x2  # cseal c3, c0, c2
     .insn r 0x5b, 0x1, 0x10, x4, x1, x2  # cseal c4, c1, c2
 
+    # R50 increment 2: this file predates the crossing's retain mask and
+    # measures a different mechanism, so it declares RETAIN ALL. The burden
+    # of proving the clear works sits on vc_r50i2_crossing_clear.S, which
+    # carries tight masks and the control that discriminates.
+    li   x31, 0xFFFF
+    csrw 0x7CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x3, x4  # ocinvoke c3, c4 -- narrows PCC to compartment_u
 
 compartment_u:
