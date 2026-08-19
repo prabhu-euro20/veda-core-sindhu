@@ -162,6 +162,18 @@ _start:
     li   x9, 4
     bne  x20, x9, fail                     // still authorized here
 
+    // R79 -- THIS FILE OBSERVES RESIDENCY FROM USER BY BINDING 113 BY NAME
+    // (line 184 below), as SCAFFOLDING for its real subject: that a refused
+    // page-out did not half-apply. Ambient root is now Machine-or-ODA only, and
+    // a privilege drop leaves the identity at the reset sentinel, so a bare
+    // User-mode bind of a boot-owned object is refused. The object is therefore
+    // DECLARED shareable here, at Machine, before the drop -- R52's own doctrine
+    // that sharing is a declaration and not a default. It changes nothing about
+    // what this file measures: residency is unaffected by owner_domain.
+    li   x1, 113
+    li   x9, 0xFFFFF                       // VEDA_DOMAIN_ANY
+    .insn r 0x0b, 0x1, 0x06, x5, x1, x9    // set.domain 113 -> ANY
+
     VEDA_DROP_TO_USER(x1, x9)   // R36: the architected drop -- mstatus.MPP=U then mret
 
     li   x1, 113                           // live and resident: the ONLY

@@ -55,6 +55,21 @@ _start:
     li   a1, 141
     .insn r 0x0b, 0x0, 0x03, x5, a1, a2     # veda.odt.populate 141
 
+    # R79 -- THIS FILE REBUILDS c5 FROM THE NAME 140 *AT USER*, AFTER THE DROP,
+    # having crossed no compartment boundary and holding no ODA. That used to
+    # work because arm 2 of veda_bind_domain_ok gave the ambient sentinel
+    # identity the ROOT, and a privilege drop leaves the identity at that
+    # sentinel (veda_pcc_restore_on_xret's body sits entirely inside
+    # `if veda_trap_depth != zeros()`, and a boot-time drop happens at depth 0).
+    # Ambient root is now Machine-or-ODA only, so the rebuild is refused unless
+    # object 140 is DECLARED shareable -- which is R52's own doctrine: sharing is
+    # a declaration, one set.domain per object, exactly what a loader does at
+    # load time. The subject of this file is OCLEAR, not the bind gate, so the
+    # declaration is the minimal honest change and it states the new rule out
+    # loud rather than hiding it.
+    li   a1, 140
+    li   a2, 0xFFFFF                        # VEDA_DOMAIN_ANY
+    .insn r 0x0b, 0x1, 0x06, x5, a1, a2     # set.domain 140 -> ANY (at Machine)
     li   a1, 140
     .insn i 0x0b, 0x5, x5, a1, 0            # veda.bind c5, 140
     li   a1, 141

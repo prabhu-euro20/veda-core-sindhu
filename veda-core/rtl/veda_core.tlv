@@ -2438,8 +2438,27 @@
          // object -- which is what a loader does at load time anyway.
          $veda_creating_domain[19:0] = ($veda_pcc_object == VEDA_OBJECT_NONE) ? VEDA_DOMAIN_BOOT
                                                                              : $veda_pcc_object[43:24];
+         //  R79 -- AMBIENT ROOT IS MACHINE-OR-ODA ONLY. The middle arm used to
+         //  read `$veda_pcc_object == VEDA_OBJECT_NONE` alone, and that sentinel
+         //  is reachable in THREE states, not one: boot (Machine, intended),
+         //  a trap handler (Machine, R77, still open), and USER CODE ENTERED BY
+         //  A PRIVILEGE DROP -- which crossed no compartment boundary, so its
+         //  identity is still the reset sentinel ($veda_pcc_object's mret arm at
+         //  :6140 only restores at depth 1), and veda.bind has no $priv term
+         //  anywhere. That third principal is not trusted code; it is the
+         //  ordinary shape of an OS process, and it held the root.
+         //
+         //  The added term is `$priv || $veda_oda_authorized`, byte-for-byte the
+         //  same pair this file already uses at :2828, :2917, :2922 and :2940 to
+         //  mirror Sail's `cur_privilege == Machine | veda_oda_authorized()`.
+         //  The ODA half is NOT decoration: without it, an ODA holder that mints
+         //  an object INSIDE its own window cannot bind what it just created,
+         //  because $veda_creating_domain keys on the PCC NAME, which an ODA does
+         //  not set. Measured -- the Machine-only first draft broke
+         //  vc_r47_oda_scope_neg's own over-refusal control.
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
-                                 ($veda_pcc_object == VEDA_OBJECT_NONE) ||
+                                 (($veda_pcc_object == VEDA_OBJECT_NONE) &&
+                                  ($priv || $veda_oda_authorized)) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
          // R73: PLAIN BIND ONLY, and that now matches $veda_bind_owner_violation
          // two hundred lines up, which has always read $is_veda_bind_plain &&
