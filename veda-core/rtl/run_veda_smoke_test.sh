@@ -694,6 +694,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r67.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R67 trap frame owner)"
 vvp "$SIM/sim_r67.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r67_frame_owner.hex" | tee -a "$RUNLOG"
 
+echo "==> R43: Compiling (Rebind must refresh an already-bound register)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r43.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r43_rebind_identity.sv"
+echo "==> Simulating (R43 rebind identity)"
+vvp "$SIM/sim_r43.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r43_rebind_identity.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"

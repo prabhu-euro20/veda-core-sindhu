@@ -49,8 +49,25 @@ _start:
     # domain, residency, e.valid, owner_ok -- is satisfied by construction, so
     # the only thing that can refuse here is the destination's own sealedness,
     # which is decided entirely by the reset otype.
+    # R43 RE-AIMED THIS PROBE, AND SUBSUMED IT. The header above names the
+    # weakness this test was built on: "One enforcement decision reads sealedness
+    # with NO tag conjunct: Rebind soft-fails on isSealedCap(destination) alone."
+    # R43 added that conjunct, and verification at source showed Rebind was the
+    # LAST such read in the machine -- OCInvoke, OCReturn, CUnseal, the
+    # dereference path, the CGet family and the ODA predicate all check the tag
+    # first or conjoin it. So the reset otype is now UNOBSERVABLE: no path can
+    # read a register's sealedness without its tag.
+    #
+    # That does not make R24's property wrong; it makes it unreachable, which is
+    # what a fix should do. The property this test now proves is the one that
+    # still matters -- a never-written register is in a defined state and a plain
+    # Bind into it yields a usable capability -- plus R43's own positive arm.
     li   x1, 70
-    .insn i 0x0b, 0x5, x9, x1, 2           # rebind c9, 70
+    .insn i 0x0b, 0x5, x9, x1, 0           # bind c9, 70 -- a never-written register
+    .insn r 0x5b, 0x0, 0x03, x12, x9, x0   # cgettag  c9  -- must be 1
+    .insn i 0x0b, 0x5, x9, x1, 2           # R43 POSITIVE: rebind the SAME object
+                                           # into a register that is now tagged
+                                           # and names it -- must still succeed
     .insn r 0x5b, 0x0, 0x03, x12, x9, x0   # cgettag  c9  -- must be 1
     .insn r 0x5b, 0x0, 0x00, x13, x9, x0   # cgetbase c9  -- must be 0x80010900
     .insn r 0x5b, 0x0, 0x01, x14, x9, x0   # cgetlen  c9  -- must be 0x40

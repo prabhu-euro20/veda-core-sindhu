@@ -128,8 +128,19 @@ umode:
     # catches it in the one place a tag assertion cannot: under `write zeros`,
     # otype 0 reads as SEALED and Rebind soft-fails forever, while cgettag
     # reads 0 either way and every tag check in this file still passes.
+    # R43 REMOVED THIS CONTROL'S DISCRIMINATOR, and the honest replacement is
+    # smaller. The comment above is exact about why Rebind was chosen: under
+    # `write zeros` otype 0 reads as SEALED and Rebind soft-fails forever. R43
+    # made Rebind check the tag first, and verification showed it was the last
+    # untagged sealedness read in the machine -- so an all-zeros OCLEAR is now
+    # BEHAVIOURALLY IDENTICAL to one that writes the unsealed sentinel, and this
+    # control was protecting a distinction that no longer exists.
+    #
+    # What still matters, and what this now asserts: a cleared register is tag 0
+    # and the machine can rebuild a usable capability in it. An implementation
+    # that corrupted more than the tag still fails here.
     li   a1, 140
-    .insn i 0x0b, 0x5, x5, a1, 2            # veda.rebind c5, 140
+    .insn i 0x0b, 0x5, x5, a1, 0            # veda.bind c5, 140
     .insn r 0x5b, 0x0, 0x03, t3, x5, x0     # cgettag t3, c5 -> 1
     li   t4, 1
     bne  t3, t4, check_fail

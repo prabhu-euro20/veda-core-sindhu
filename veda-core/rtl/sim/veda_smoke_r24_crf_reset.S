@@ -40,8 +40,18 @@ _start:
     // residency, valid, owner -- is satisfied by construction, so the only
     // thing that can refuse is the destination's own sealedness, which is
     // decided entirely by the reset otype.
+    // R43 RE-AIMED THIS PROBE AND SUBSUMED IT. This test was built on the fact
+    // its own header names -- Rebind read sealedness with NO tag conjunct. R43
+    // added that conjunct, and verification showed Rebind was the LAST untagged
+    // sealedness read on either layer, so the reset otype is now unobservable.
+    // The property still worth proving is that a never-written register is in a
+    // defined state and a plain Bind into it yields a usable capability, plus
+    // R43's own positive arm.
     li   x1, 70
-    .insn i 0x0b, 0x5, x9, x1, 2           # rebind c9, 70
+    .insn i 0x0b, 0x5, x9, x1, 0           # bind c9, 70 -- a never-written register
+    .insn i 0x0b, 0x5, x9, x1, 2           # R43 POSITIVE: rebinding the SAME
+                                           // object into a register that now
+                                           // names it must still succeed
     .insn r 0x5b, 0x0, 0x03, x12, x9, x0   # cgettag  c9  -- must be 1
     .insn r 0x5b, 0x0, 0x00, x13, x9, x0   # cgetbase c9  -- must be 0x80010900
     .insn r 0x5b, 0x0, 0x01, x14, x9, x0   # cgetlen  c9  -- must be 0x40

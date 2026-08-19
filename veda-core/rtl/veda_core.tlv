@@ -2492,7 +2492,23 @@
          // manipulate-vs-use split), matching veda_bind_insts.sail's own
          // VEDA_REBIND match arm, which folds all three into the same
          // uniform soft-fail branch.
-         $veda_rebind_ok         = !$veda_rebind_sealed && $veda_odt_valid && $veda_owner_ok;
+         // R43: "already-bound" is a precondition, and neither half was enforced.
+         // Section 4 defines Rebind as refreshing an ALREADY-BOUND register, so
+         // the destination must be TAGGED and must already name THIS object --
+         // otherwise Rebind carries an Offset meaningful in object A onto object
+         // B's bounds. Not an escalation as it stood (Perms are re-derived from
+         // the entry) and one the moment anybody makes Rebind keep the holder's
+         // Perms, which is the refuted R38(b) closure.
+         //
+         // Closing it removes the LAST untagged sealedness read in the machine:
+         // $veda_rebind_sealed reads the destination's otype with no tag
+         // conjunct, and every other sealedness consumer on both layers checks
+         // the tag first or conjoins it. Verified at source before landing.
+         // Soft-fail, not a trap -- Rebind never traps for any failure reason.
+         $veda_rdcap_tag          = /vreg[$veda_rd_cap]$tag;
+         $veda_rdcap_objid[43:0]  = /vreg[$veda_rd_cap]$object_id;
+         $veda_rebind_identity_ok = $veda_rdcap_tag && ($veda_rdcap_objid == $veda_object_id);
+         $veda_rebind_ok         = $veda_rebind_identity_ok && !$veda_rebind_sealed && $veda_odt_valid && $veda_owner_ok;
          // Milestone 12: real claim/re-claim write-back, shared by both
          // Bind's and Rebind's own success paths below -- mirrors
          // veda_bind_insts.sail's own `claimed_entry`, written on every
