@@ -132,7 +132,7 @@ decoded opcode. Found and fixed two real bugs via an actual
 cycle-by-cycle debug trace, neither in the trap mechanism itself (which
 worked first try): a second real instance of the Milestone-13-taught
 Object_ID-collision class, and two testbenches' own underestimated
-cycle budgets. 25/25 RTL tests passing. **Tier 3 item 5 is now fully
+cycle budgets. 25/25 RTL tests passing at the time (the RTL suite is 112/112 today). **Tier 3 item 5 is now fully
 closed, in both Sail and RTL.** With the two remaining named gaps
 (`OSpecialRW`'s own capability-gating, blocked on a real `Perms`-on-`PCC`
 consumer that doesn't exist yet; real multi-hart RTL, a large separate
