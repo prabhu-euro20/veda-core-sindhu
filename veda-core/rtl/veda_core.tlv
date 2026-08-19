@@ -2748,6 +2748,21 @@
          // trap (below), the pin term inside them is carried automatically and
          // a separate signal would be pure duplication -- two routes computing
          // the same condition, free to drift apart later.
+         // R68: R65's rule reaches Populate, Populate-Fast and Destroy too.
+         // $veda_oda_denies_old tests old_entry.Base, and page-out preserves that
+         // Base as a value the model's own comment calls "stale, and
+         // unreachable" -- so for a NON-RESIDENT object the window test asks
+         // about the frame the object has LEFT. R65 installed the term at
+         // set.cow and set.domain and stopped; the same test authorizes at seven
+         // sites. Measured on Sail: from User, with an ODA covering only the
+         // freed frame, a Populate over the paged-out victim was ACCEPTED while
+         // the identical instruction against an out-of-window object was refused.
+         //
+         // Populate-Fast is NOT exempt. DESIGN_02's mechanism-1 sketch calls it
+         // the repair path, but that document's own later decision supersedes the
+         // sentence: the repair path is veda.odt.page.in, deliberately left for
+         // its own pass along with page.out.
+         $veda_stale_authority = !$priv && $veda_odt_valid && !$veda_odt_resident;
          $veda_odt_populate_violation = ($is_veda_odt_populate || $is_veda_odt_populate_fast) &&
                                           // R63: the region named must EXIST. $veda_odt_idx_ok
                                           // already refuses to resolve it, but that is a silent
@@ -2785,6 +2800,7 @@
                                            // unmintable by any ODA not covering address zero
                                            // -- deleting the mechanism rather than scoping it.
                                            $veda_oda_denies_new ||
+                                           $veda_stale_authority ||
                                            ($veda_odt_valid && $veda_oda_denies_old));
          // RTL-17: authority exactly as Populate/Destroy, plus a refusal on a
          // slot that holds nothing -- a policy on a non-existent object is
@@ -2820,7 +2836,6 @@
          // choice for a stated reason: R62 gated WELL-FORMEDNESS, which applies to
          // everyone; this gates the VALIDITY OF AN AUTHORITY TEST, and Machine is
          // never window-tested at all.
-         $veda_stale_authority = !$priv && $veda_odt_valid && !$veda_odt_resident;
          $veda_odt_set_domain_violation = $is_veda_odt_set_domain &&
                                            ($veda_stale_authority ||
                                            !($priv || $veda_oda_authorized) || !$veda_odt_valid ||
@@ -2837,6 +2852,8 @@
          // unless the ODA covers address zero; a slot this actor destroyed
          // itself keeps its Base and stays in reach.
          $veda_odt_destroy_violation  = $is_veda_odt_destroy  &&
+                                          // R68: the same rule, same reason.
+                                          ($veda_stale_authority ||
                                           // R63: Destroy is deliberately NOT gated on
                                           // $veda_odt_valid (an invalid slot's generation must
                                           // still be protected), so unlike the other writers the
@@ -2845,7 +2862,7 @@
                                           (!$veda_region_nameable ||
                                            !($priv || $veda_oda_authorized) ||
                                            $veda_object_is_executing ||
-                                           $veda_oda_denies_old);
+                                           $veda_oda_denies_old));
          // ─────────────────────────────────────────────────────────
          //  RTL-6c: the paging pair's refusal conditions. Follows
          //  Destroy's authority shape, NOT Populate's -- Sail's gate is

@@ -699,6 +699,11 @@ iverilog -g2012 -I "$SIM" -o "$SIM/sim_r43.vvp" "$SIM/veda_core.sv" "$SIM/tb_ved
 echo "==> Simulating (R43 rebind identity)"
 vvp "$SIM/sim_r43.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r43_rebind_identity.hex" | tee -a "$RUNLOG"
 
+echo "==> R68: Compiling (no ODT write authorized against a Base the object has left)"
+iverilog -g2012 -I "$SIM" -o "$SIM/sim_r68.vvp" "$SIM/veda_core.sv" "$SIM/tb_veda_smoke_r68_populate_stale.sv"
+echo "==> Simulating (R68 populate stale base)"
+vvp "$SIM/sim_r68.vvp" +veda_fixtures +elf_hex="$SIM/veda_smoke_r68_populate_stale.hex" | tee -a "$RUNLOG"
+
 echo "==> Regression: base RV64I 81-instruction smoke test (unmodified)"
 iverilog -g2012 -I "$SIM" -o "$SIM/sim_base.vvp" "$SIM/veda_core.sv" "$SIM/tb_smoke.sv"
 vvp "$SIM/sim_base.vvp" +veda_fixtures | tee -a "$RUNLOG"
