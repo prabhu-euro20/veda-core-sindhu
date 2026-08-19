@@ -293,8 +293,7 @@ scheduler_entry:
 switcher_entry:
     csrr x28, mcause
     li   x29, 11
-    bne  x28, x29, switcher_entry            # not our ecall -- ignore (real fault
-                                              # recovery out of scope this pass)
+    bne  x28, x29, switcher_fault_exit
 
     csrr x28, mepc
     addi x28, x28, 4
@@ -358,6 +357,48 @@ return_to_caller:
     la   t0, saved_sp
     ld   sp, 0(t0)
     mv   a0, x6                              # a0 := final yield count
+    ret
+
+# ─────────────────────────────────────────────────────────────
+#  R87 -- THE UNEXPECTED-FAULT EXIT.
+#
+#  This guard used to be `bne x28, x29, switcher_entry` -- a branch to ITSELF,
+#  with the comment "not our ecall -- ignore (real fault recovery out of scope
+#  this pass)". So any trap that was not our ECALL spun the machine forever,
+#  silently, with mcause/mtval/mepc unread.
+#
+#  THAT COST A WHOLE DEBUGGING CYCLE, MEASURED. When this file was first executed
+#  (R87), it stopped five times, and the fifth could not be diagnosed at all until
+#  a scratch build replaced this spin with a reporting path -- at which point the
+#  cause fell out in one run: mcause 0x18, mtval 0x18b = cap_idx 12, cause 0x0B
+#  DOMAIN_VIOLATION. A HANDLER THAT CANNOT REPORT ITS OWN UNEXPECTED FAULT IS NOT
+#  MERELY INCOMPLETE; IT IS THE THING THAT MAKES EVERY LATER FAULT UNDIAGNOSABLE.
+#
+#  It now records what happened and RETURNS TO ITS CALLER with a distinguishable
+#  result, using the same saved_ra/saved_sp restore `return_to_caller` above
+#  already performs. It deliberately does NOT halt the machine: the switcher is a
+#  library, and deciding that a fault is fatal is the caller's business, not its
+#  own. `veda_sched_run_asm` returns uint32_t, so 0xFFFFFFFF cannot collide with
+#  any real yield count.
+#
+#  Ordinary stores here, matching every other access to these scalars in this
+#  file. Converting the whole set to capability accesses -- and growing object
+#  167 from Length 0x20 to cover saved_sp, which it currently misses by 8 bytes
+#  -- is R83 step 2, and doing it here for three fields alone would leave the
+#  file half-converted.
+# ─────────────────────────────────────────────────────────────
+switcher_fault_exit:
+    la   t0, fault_cause
+    sd   x28, 0(t0)                          # x28 already holds mcause
+    csrr x28, mtval
+    sd   x28, 8(t0)
+    csrr x28, mepc
+    sd   x28, 16(t0)
+    la   t0, saved_ra
+    ld   ra, 0(t0)
+    la   t0, saved_sp
+    ld   sp, 0(t0)
+    li   a0, -1                              # 0xFFFFFFFF -- no real yield count
     ret
 
 .balign 4
@@ -515,4 +556,15 @@ yield_limit:
 saved_ra:
     .dword 0
 saved_sp:
+    .dword 0
+# R87: the unexpected-fault record. Read by the caller when
+# veda_sched_run_asm returns 0xFFFFFFFF.
+.global fault_cause
+fault_cause:
+    .dword 0
+.global fault_tval
+fault_tval:
+    .dword 0
+.global fault_epc
+fault_epc:
     .dword 0
