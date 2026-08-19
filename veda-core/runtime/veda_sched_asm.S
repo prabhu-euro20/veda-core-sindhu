@@ -88,24 +88,39 @@ veda_sched_init_asm:
     .insn r 0x5b, 0x1, 0x10, x4, x4, x13  # cseal c4, c4, c13  -- sealed CODE_SCHED
     .insn r 0x5b, 0x1, 0x10, x5, x5, x13  # cseal c5, c5, c13  -- sealed DATA_SCHED
 
-    # ---- save-area-0: Object_ID 165, Load|Store, permanent bind c6 ----
-    # Length=0x0030 (48): 24B PC/base/length (unchanged) + 8B padding to a
-    # 16B boundary + 16B table-base-capability slot (CRF-exhaustion fix,
-    # TOOLCHAIN_MILESTONE_13_CRF_EXHAUSTION_DECISION.md +
-    # TOOLCHAIN_MILESTONE_14_CRF_SPILL_RESULTS.md).
+    # ---- save-area-0: Object_ID 165, permanent bind c6 ----
+    # R87 -- WAS Length=0x0030 (48) WITH A 16-BYTE CAPABILITY SLOT, AND THAT WAS
+    # A 128-BIT LAYOUT. A Veda capability is 256 BITS (veda_types.sail:102-107,
+    # "the 256-bit respec"), so OCS.C writes 32 bytes (veda_ocl_insts.sail:446).
+    # Offset 32 + 32 = 64 against a 48-byte object is a BOUNDS_VIOLATION, and it
+    # is where the first-ever execution of this file trap-looped: MEPC 0x80000214,
+    # `ocs.c c6, x5(=32), c11`.
+    # Now Length=0x0040 (64): 24B PC/base/length + 8B padding to a 32-BYTE
+    # boundary (OCL.C/OCS.C require 32-byte alignment, checked inside
+    # veda_check_access since R19 increment 1) + 32B capability slot.
+    #
+    # AND Perms 0x000C -> 0x003C. LOAD|STORE alone is not enough to move a
+    # CAPABILITY: R40 made PERM_LOAD_CAPABILITY (bit 4) and
+    # PERM_STORE_CAPABILITY (bit 5) genuinely enforced, and this object carried
+    # neither -- so the same instruction failed the permission check as well as
+    # the bounds one. Two independent faults on one instruction, both from
+    # widenings this file was never asked to survive.
+    # (CRF-exhaustion background: TOOLCHAIN_MILESTONE_13_CRF_EXHAUSTION_DECISION.md
+    # + TOOLCHAIN_MILESTONE_14_CRF_SPILL_RESULTS.md.)
     la   t0, save_area_0
     slli t0, t0, 32
-    li   t1, 0x0030000C
+    li   t1, 0x0040003C
     or   t0, t0, t1
     li   a0, 165
     .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0,t0
     li   a0, 165
     .insn i 0x0b, 0x5, x6, a0, 0   # veda.bind c6, a0
 
-    # ---- save-area-1: Object_ID 166, Load|Store, permanent bind c7 ----
+    # ---- save-area-1: Object_ID 166, permanent bind c7 ----
+    # R87: same two corrections as save-area-0 above, for the same two reasons.
     la   t0, save_area_1
     slli t0, t0, 32
-    li   t1, 0x0030000C
+    li   t1, 0x0040003C
     or   t0, t0, t1
     li   a0, 166
     .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0,t0
@@ -122,13 +137,27 @@ veda_sched_init_asm:
     li   a0, 167
     .insn i 0x0b, 0x5, x8, a0, 0   # veda.bind c8, a0
 
-    # ---- return-sentry SOURCE: Object_ID 168, Length=0xFFFF(unbounded), Execute ----
+    # ---- return-sentry SOURCE: Object_ID 168, UNBOUNDED, Execute ----
+    # R87 -- WAS `li t1, 0xFFFF0002` COMMENTED "Length=0xFFFF(unbounded)", AND
+    # 0xFFFF STOPPED BEING UNBOUNDED WHEN LENGTH WIDENED 16 -> 40 BITS.
+    # VEDA_PCC_UNBOUNDED is 0xFFFFFFFFFF (veda_regs.sail:120, RTL twin
+    # veda_core.tlv:1150), so 0xFFFF was a genuine 65535-byte compartment. The
+    # OCRETURN through this sentry narrowed PCC for real, and the very next
+    # ordinary `lw` at after_scheduler_return+8 was refused -- measured, it is
+    # where this file failed once the three earlier repairs were in.
+    #
+    # AND PLAIN POPULATE CANNOT EXPRESS THE FIX. Its descriptor is Base 32 /
+    # Length 16 / Perms 16, and veda_ocl_insts.sail:926-928 says so deliberately:
+    # "the limit is in the ENCODING, visibly, not a silent truncation of a wide
+    # value". So this site must use POPULATE.FAST, which takes Length and Perms
+    # from veda_attr (CSR 0x7C4) at the full width and the Base from a register.
+    li   t1, 0xFFFFFFFFFF                 # VEDA_PCC_UNBOUNDED, all 40 bits
+    slli t1, t1, 16
+    ori  t1, t1, 0x0002                   # Perms = Execute
+    csrw 0x7C4, t1                        # veda_attr := Length|Perms
     la   t0, after_scheduler_return
-    slli t0, t0, 32
-    li   t1, 0xFFFF0002
-    or   t0, t0, t1
     li   a0, 168
-    .insn r 0x0b, 0x0, 0x03, x5, a0, t0   # veda.odt.populate x5, a0,t0
+    .insn r 0x0b, 0x0, 0x04, x5, a0, t0   # veda.odt.populate.fast x5, a0, t0
     li   a0, 168
     .insn i 0x0b, 0x5, x9, a0, 0   # veda.bind c9, a0
 
@@ -214,6 +243,21 @@ scheduler_entry:
     .insn r 0x0b, 0x3, 0x00, x24, x8, x23  # ocl.d c8, x23(=0), x24  -- load thread_index
     xori x24, x24, 1
     .insn r 0x0b, 0x3, 0x01, x24, x8, x23  # ocs.d c8, x23(=0), x24  -- store toggled thread_index
+    # R87 -- R71's RETAIN MASK. A crossing clears the whole capability register
+    # file except the registers CSR 0x8CA names, and TRAP ENTRY ZEROES THAT MASK
+    # (veda_regs.sail:382), so silence means clear. This file held c6/c7/c8
+    # permanently and never wrote the mask, so the first crossing cleared them
+    # out from under it: measured, the switcher's own `ocs.d c6` faulted on the
+    # very next entry. Both test mirrors were updated when R71 landed and declare
+    # 0xFFFF here; this file was not, because nothing built it.
+    #
+    # 0xFFFF is RETAIN-ALL, matching the mirrors. That is blunt on purpose for a
+    # first repair -- R71's point is that silence must mean clear, not that a
+    # declaration must be minimal -- and narrowing it to the registers each site
+    # genuinely needs is a later refinement, with a test that can tell the
+    # difference.
+    li   x31, 0xFFFF
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x10, x0   # ocreturn c10
     j    scheduler_entry                     # must NOT be reached
 
@@ -265,6 +309,21 @@ invoke_scheduler:
     beq  x6, x27, return_to_caller
 
     .insn r 0x5b, 0x1, 0x15, x10, x9, x0  # csealentry c10, c9  -- mint fresh return sentry
+    # R87 -- R71's RETAIN MASK. A crossing clears the whole capability register
+    # file except the registers CSR 0x8CA names, and TRAP ENTRY ZEROES THAT MASK
+    # (veda_regs.sail:382), so silence means clear. This file held c6/c7/c8
+    # permanently and never wrote the mask, so the first crossing cleared them
+    # out from under it: measured, the switcher's own `ocs.d c6` faulted on the
+    # very next entry. Both test mirrors were updated when R71 landed and declare
+    # 0xFFFF here; this file was not, because nothing built it.
+    #
+    # 0xFFFF is RETAIN-ALL, matching the mirrors. That is blunt on purpose for a
+    # first repair -- R71's point is that silence must mean clear, not that a
+    # declaration must be minimal -- and narrowing it to the registers each site
+    # genuinely needs is a later refinement, with a test that can tell the
+    # difference.
+    li   x31, 0xFFFF
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x12, x0, x4, x5   # ocinvoke c4, c5     -- invoke SCHEDULER
     j    switcher_entry                     # must NOT be reached (scheduler must OCRETURN)
 
@@ -329,6 +388,21 @@ do_resume:
     sub  x31, x28, x29                      # delta = saved_pc - saved_base
     .insn r 0x5b, 0x1, 0x0a, x12, x12, x31  # oca c12, c12, x31    -- c12.Offset := delta
     .insn r 0x5b, 0x1, 0x15, x12, x12, x0   # csealentry c12, c12 -- mint sentry in place
+    # R87 -- R71's RETAIN MASK. A crossing clears the whole capability register
+    # file except the registers CSR 0x8CA names, and TRAP ENTRY ZEROES THAT MASK
+    # (veda_regs.sail:382), so silence means clear. This file held c6/c7/c8
+    # permanently and never wrote the mask, so the first crossing cleared them
+    # out from under it: measured, the switcher's own `ocs.d c6` faulted on the
+    # very next entry. Both test mirrors were updated when R71 landed and declare
+    # 0xFFFF here; this file was not, because nothing built it.
+    #
+    # 0xFFFF is RETAIN-ALL, matching the mirrors. That is blunt on purpose for a
+    # first repair -- R71's point is that silence must mean clear, not that a
+    # declaration must be minimal -- and narrowing it to the registers each site
+    # genuinely needs is a later refinement, with a test that can tell the
+    # difference.
+    li   x31, 0xFFFF
+    csrw 0x8CA, x31
     .insn r 0x5b, 0x1, 0x16, x0, x12, x0    # ocreturn c12        -- atomically narrow + jump
     j    switcher_entry                       # must NOT be reached
 
@@ -380,21 +454,30 @@ do_resume:
     # scalar state, not on this hot spill path, and already lived in
     # ordinary .data.
 .section .data
-.align 4
+# R87: .align 5 (32 bytes), not 4. OCL.C/OCS.C require the ACCESSED address to be
+# 32-byte aligned, and the capability slot sits at offset 32 -- which is only
+# 32-aligned if the save area itself is. Each area is now 64 bytes: 24B of
+# PC/base/length, 8B of padding, and a 32B capability slot.
+.align 5
 save_area_0:
     .dword 0
     .dword 0
     .dword 0
-    .dword 0   # offset 24-31: padding to the 16-byte-aligned capability slot
-    .dword 0   # offset 32-39: globals table-base capability (low 8B)
-    .dword 0   # offset 40-47: globals table-base capability (high 8B)
+    .dword 0   # offset 24-31: padding to the 32-byte-aligned capability slot
+    .dword 0   # offset 32-63: globals table-base capability -- 256 BITS, four
+    .dword 0   #               dwords, not the two a 128-bit format needed
+    .dword 0
+    .dword 0
+.align 5
 save_area_1:
     .dword 0
     .dword 0
     .dword 0
     .dword 0   # offset 24-31: padding
-    .dword 0   # offset 32-39: globals table-base capability (low 8B)
-    .dword 0   # offset 40-47: globals table-base capability (high 8B)
+    .dword 0   # offset 32-63: globals table-base capability -- 256 bits
+    .dword 0
+    .dword 0
+    .dword 0
 
 .section .data
 .align 3
