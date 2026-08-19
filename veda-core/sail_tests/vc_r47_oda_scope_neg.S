@@ -43,6 +43,9 @@ _start:
     csrw mtvec, t0
     li   s0, 0                      # trap count
     li   s1, 0                      # cause of the most recent trap
+    li   s2, 0                      # R81 epilogue: tag of the Machine-side bind
+    li   s3, 0                      # R81 epilogue: its Base
+    li   s4, 0                      # R81 epilogue: arm the handler
 
     # ─── M-mode: build the authority, and scope it to `win` ───────────────
     # object 40: Base = win, Length = 64, Perms = 0x0080 (PERM_ACCESS_SYSTEM_REGISTERS)
@@ -187,14 +190,12 @@ umode:
     bne  s1, t4, check_fail
 
     # ... and 43 must be UNTOUCHED, not merely un-repointed: still at `out`.
-    li   a1, 43
-    .insn i 0x0b, 0x5, x7, a1, 1            # veda.bind.notrap c7, 43
-    .insn r 0x5b, 0x0, 0x03, t3, x7, x0     # cgettag t3, c7
-    li   t4, 1
-    bne  t3, t4, check_fail
-    .insn r 0x5b, 0x0, 0x00, t3, x7, x0     # cgetbase t3, c7
-    la   t4, out
-    bne  t3, t4, check_fail
+    # R81 MOVED THIS CHECK TO MACHINE, AND IT IS STRONGER THERE. It used to bind
+    # 43 FROM USER -- and 43 lives at `out`, entirely outside this ODA's window,
+    # so the observation method was itself an instance of the defect R81 closes:
+    # an ODA holder reaching an object its window does not cover. The check now
+    # runs in the trap handler, at Machine, from the principal that actually owns
+    # 43. See the epilogue below CONTROL 3.
 
     # ═══ ATTACK 5 -- destroy a descriptor outside the window ══════════════
     li   a1, 43
@@ -212,11 +213,8 @@ umode:
     li   t4, 0x02
     bne  s1, t4, check_fail
 
-    li   a1, 43
-    .insn i 0x0b, 0x5, x8, a1, 1            # veda.bind.notrap c8, 43
-    .insn r 0x5b, 0x0, 0x03, t3, x8, x0     # cgettag t3, c8
-    li   t4, 1
-    bne  t3, t4, check_fail                 # still alive
+    # R81: "43 is still alive" is verified at Machine in the epilogue, for the
+    # same reason as ATTACK 4's check above -- 43 is outside this ODA's window.
 
     # ═══ CONTROL 2 -- destroy IS allowed inside the window ════════════════
     li   a1, 42
@@ -235,6 +233,20 @@ umode:
     li   t4, 10
     bne  t3, t4, check_fail
 
+    # ═══ MACHINE-SIDE EPILOGUE (R81) -- verify 43 from its real owner ═════
+    # ATTACK 4 tried to repoint 43 and ATTACK 5 tried to destroy it. Both were
+    # refused above by trap count and cause. Counting a refusal is not checking
+    # it, so the EFFECT is asserted here: 43 must still be valid AND still at
+    # `out`. This runs at Machine, inside the handler, because a User+ODA
+    # principal may no longer touch an object outside its window -- which is
+    # exactly what this file now also proves.
+    li   s4, 1
+    ecall
+    li   t4, 1
+    bne  s2, t4, check_fail                 # 43 still binds -- not destroyed
+    la   t4, out
+    bne  s3, t4, check_fail                 # and still at `out` -- not repointed
+
     RVMODEL_HALT_PASS
 check_fail:
     RVMODEL_HALT_FAIL
@@ -243,6 +255,17 @@ check_fail:
 trap_handler:
     addi s0, s0, 1
     csrr s1, mcause
+    # R81 epilogue: the ONLY trap that carries s4 = 1 is the deliberate ecall at
+    # the end, after every trap-count assertion has already been made, so this
+    # arm cannot perturb what the ATTACKs measure.
+    li   t4, 1
+    bne  s4, t4, no_epilogue
+    li   s4, 0
+    li   a1, 43
+    .insn i 0x0b, 0x5, x10, a1, 1           # veda.bind.notrap c10, 43 -- at MACHINE
+    .insn r 0x5b, 0x0, 0x03, s2, x10, x0    # cgettag  -> s2
+    .insn r 0x5b, 0x0, 0x00, s3, x10, x0    # cgetbase -> s3
+no_epilogue:
     csrr t4, mepc
     addi t4, t4, 4
     csrw mepc, t4

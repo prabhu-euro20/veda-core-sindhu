@@ -46,6 +46,7 @@ p23_oclear.S            AGREE      R50 increment 1: OCLEAR zeroes the VALUE, kee
 p21_oda_crossing.S      AGREE      R48 CLOSED cross-layer: the ODA is cleared at every crossing
 p24_mtvec_mode.S        AGREE      R80 CLOSED: mtvec MODE is read-only zero on both layers. Before
 p25_privilege_drop_root.S AGREE    R79 CLOSED: ambient root is Machine-or-ODA only, so User code entered
+p26_oda_bind_window.S   AGREE      R81 CLOSED: the ODA's window bounds what it BINDS, not only what it creates
 "
 #                                  occupant's cow and owner_domain must not attach to it. Plain
 #                                  Populate carried both on Sail and cleared both on the RTL, and

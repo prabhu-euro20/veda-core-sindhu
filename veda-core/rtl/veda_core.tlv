@@ -2456,9 +2456,27 @@
          //  because $veda_creating_domain keys on the PCC NAME, which an ODA does
          //  not set. Measured -- the Machine-only first draft broke
          //  vc_r47_oda_scope_neg's own over-refusal control.
+         //  R81 -- AN AUTHORITY'S SCOPE BOUNDS WHAT IT AUTHORISES, AND NOTHING
+         //  ELSE. R79's ambient arm is split in two, because the two principals
+         //  standing in it are bounded by different things: MACHINE by nothing
+         //  (R47 refused to scope it and that stands), an ODA HOLDER by its own
+         //  window. veda.bind is the EIGHTH consumer of the ODA and read no ODA
+         //  field at all. MEASURED first: an ODA holder scoped to `win` bound an
+         //  object at `out`, read 0xC0FFEE through it, and took NO TRAP.
+         //
+         //  COSTS NOTHING NEW. $veda_oda_denies_old is already computed from
+         //  $veda_odt_base/$veda_odt_length at :4676-4677 -- the very entry this
+         //  gate already reads to mint from -- so there is no second lookup and
+         //  no new port. That is the check that refuted R50's GPR-mask ABI, run
+         //  here before the design was chosen rather than after.
+         //
+         //  ARM 1 (ANY) and ARM 4 (domain match) take no window, deliberately: a
+         //  public DECLARATION is not the ODA's to bound, and a compartment's own
+         //  identity authorised its own bind.
          $veda_bind_domain_ok = ($veda_odt_owner_domain == VEDA_DOMAIN_ANY) ||
+                                 (($veda_pcc_object == VEDA_OBJECT_NONE) && $priv) ||
                                  (($veda_pcc_object == VEDA_OBJECT_NONE) &&
-                                  ($priv || $veda_oda_authorized)) ||
+                                  $veda_oda_authorized && !$veda_oda_denies_old) ||
                                  ($veda_odt_owner_domain == $veda_pcc_object[43:24]);
          // R73: PLAIN BIND ONLY, and that now matches $veda_bind_owner_violation
          // two hundred lines up, which has always read $is_veda_bind_plain &&
