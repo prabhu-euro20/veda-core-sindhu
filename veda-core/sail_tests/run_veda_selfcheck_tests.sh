@@ -31,6 +31,49 @@ for tool in "$AS" "$LD" "$SIM"; do
   fi
 done
 
+# ═══ R88 -- NO DARK TESTS. A .S FILE HERE MUST BE ACCOUNTED FOR ═══════════
+#
+# This runner globs `vc_*.S`. FOURTEEN files in this very directory were named
+# `veda_*.S` -- an earlier convention -- so the glob never matched them, and they
+# sat here for months looking exactly like coverage: in the tests directory,
+# named as tests, naming CSeal, CUnseal, CSetBounds, OCA, NMC-add, the atomics,
+# the query family and the ODT lifecycle. Three were sampled and all three
+# FAILED. Nobody ran them and nobody missed them.
+#
+# That is the same shape R87 found one level down, where the SHIPPED SWITCHER was
+# built by nothing and had drifted five separate ways. The lesson is not "rename
+# fourteen files" -- that fixes fourteen and prevents nothing. It is that a test
+# directory must not be able to hold a file nobody accounts for.
+#
+# difftest/run_difftests.sh ALREADY SOLVES THIS CLASS, and has for a while: it
+# FATALs when a probe exists and is not in its expected table, saying a dropped
+# entry "becomes a test nobody runs and nobody misses." That guard existed for
+# probes and for nothing else. This is the same guard, here.
+#
+# FOUR WAYS A FILE MAY LIVE IN THIS DIRECTORY, and there is no fifth:
+#   vc_*.S                 a test, and it is run
+#   poc_*.S                a probe that must NOT be run, because a PASS in it
+#                          means an escalation works
+#   included by a test     a fragment, not a test (veda_selfcheck_macros.S)
+#   pending/               parked, with the reason written where it is parked
+# Anything else is a hard error, before a single test runs.
+declare -a dark
+for f in *.S; do
+  case "$f" in
+    vc_*.S|poc_*.S) continue ;;
+  esac
+  # a fragment that some test .include's is not a test
+  if grep -ql "\.include \"$f\"" vc_*.S poc_*.S 2>/dev/null; then continue; fi
+  dark+=("$f")
+done
+if [ "${#dark[@]}" -ne 0 ]; then
+  echo "FATAL: ${#dark[@]} file(s) in sail_tests/ are neither run, nor poc_, nor included:" >&2
+  for f in "${dark[@]}"; do echo "  $f" >&2; done
+  echo "  Rename to vc_* to run it, poc_* if a PASS would mean an escalation works," >&2
+  echo "  move it to pending/ with a written reason, or delete it. R88." >&2
+  exit 2
+fi
+
 pass_count=0
 fail_count=0
 declare -a results

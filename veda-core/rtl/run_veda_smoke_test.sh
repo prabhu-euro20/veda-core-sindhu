@@ -37,6 +37,33 @@ fi
 SIM=sim
 TLV=veda_core.tlv
 STRIPPED=$SIM/_novz.tlv
+# ═══ R88 -- NO DARK TESTS, THE RTL HALF ════════════════════════════════════
+#
+# sail_tests/ was holding fourteen files named for real mechanisms that its
+# runner's glob never matched -- CSeal, CUnseal, CSetBounds, OCA, NMC-add, the
+# atomics, the query family, the ODT lifecycle -- and all fourteen had drifted
+# into failing while looking exactly like coverage. This directory happens to be
+# clean today, measured: every rtl/sim/*.S is named by this script. The guard is
+# here so it STAYS that way, because "clean today" is what sail_tests/ was too.
+#
+# This runner names each test explicitly rather than globbing, so the rule is
+# simply that a .S here must be named somewhere in this file. It reads $SELF and
+# not $0, because R49 already paid for that: the comment at the top of this file
+# says the resolution happens BEFORE the cd precisely because "the coverage guard
+# at the end of this file has to read this file, and after `cd` a relative path
+# breaks." The first draft of this guard used $0 and failed exactly that way.
+darkrtl=()
+for f in "$SIM"/*.S; do
+  b="$(basename "$f" .S)"
+  grep -q "$b" "$SELF" || darkrtl+=("$(basename "$f")")
+done
+if [ "${#darkrtl[@]}" -ne 0 ]; then
+  echo "FATAL: ${#darkrtl[@]} file(s) in rtl/sim/ are never named by this runner:" >&2
+  for f in "${darkrtl[@]}"; do echo "  $f" >&2; done
+  echo "  Add a build+run block for it, or delete it. R88." >&2
+  exit 2
+fi
+
 mkdir -p "$SIM"
 
 python3 - "$TLV" "$STRIPPED" <<'EOF'
